@@ -13,7 +13,7 @@ class MemoryConfig:
     paths with home-directory shortcuts already expanded.
     """
 
-    RECORD_BODY_TOKEN_LIMIT: ClassVar[int] = 250
+    RECORD_BODY_CHARACTER_LIMIT: ClassVar[int] = 1_000
     SEARCH_PREVIEW_CHARACTER_LIMIT: ClassVar[int] = 160
 
     data_directory: Path

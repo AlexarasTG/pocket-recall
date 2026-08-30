@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# MacOS stuff
+.DS_Store
+
+# Local knowledge and telemetry.
+*.sqlite
+*.sqlite-*

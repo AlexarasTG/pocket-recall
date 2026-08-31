@@ -1,8 +1,9 @@
 """Public core operations, independent of persistence and transport."""
 
+from datetime import datetime
 from typing import Protocol
 
-from memory_manager.models import MemoryPreSaveDraft, MemoryRecord, SearchCandidate
+from memory_manager.models import MemoryPreSaveDraft, MemoryRecord, ArchivedMemoryEntry, SearchCandidate
 
 
 class MemoryService(Protocol):
@@ -16,22 +17,47 @@ class MemoryService(Protocol):
     index is stale. Missing/inactive IDs raise LookupError; invalid content or
     arguments raise ValueError. Storage/index failures must not be hidden as
     empty search results.
+
+    Pass the previewed record's updated_at to mutations so another session's
+    edits cannot be overwritten by an approval based on older content.
     """
 
     def create(self, draft: MemoryPreSaveDraft) -> MemoryRecord:
         """Persist approved content; created_at and updated_at initially match."""
         ...
 
-    def update(self, memory_id: str, draft: MemoryPreSaveDraft) -> MemoryRecord:
+    def update(
+        self, memory_id: str, draft: MemoryPreSaveDraft,
+        *, expected_updated_at: datetime | None = None,
+    ) -> MemoryRecord:
         """Replace approved content, retain the old revision, refresh updated_at."""
         ...
 
-    def delete(self, memory_id: str) -> None:
+    def delete(
+        self, memory_id: str, *, expected_updated_at: datetime | None = None,
+    ) -> None:
         """Soft-delete an active record and exclude it from recall immediately."""
         ...
 
-    def restore(self, memory_id: str) -> MemoryRecord:
-        """Restore a deleted record within its recovery window and reindex it."""
+    def restore(
+        self, memory_id: str, *, revision_id: str | None = None,
+        expected_updated_at: datetime | None = None,
+    ) -> MemoryRecord:
+        """Restore deleted or historical content and request an index update."""
+        ...
+
+    def history(
+        self, memory_id: str, *, limit: int = 50, offset: int = 0,
+    ) -> tuple[ArchivedMemoryEntry, ...]:
+        """List recoverable versions, newest replacement first."""
+        ...
+
+    def fetch_revision(self, memory_id: str, revision_id: str) -> ArchivedMemoryEntry:
+        """Read one retained version for an explicit recovery preview."""
+        ...
+
+    def fetch_deleted(self, memory_id: str) -> MemoryRecord:
+        """Read a deleted record within its recovery window; not for recall."""
         ...
 
     def list_records(

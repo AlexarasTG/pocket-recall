@@ -1,0 +1,212 @@
+"""Human-facing commands with approval before changing memory content."""
+
+import argparse
+from dataclasses import asdict
+import json
+from pathlib import Path
+import sqlite3
+import sys
+
+from memory_manager.config import MemoryConfig
+from memory_manager.memory_store import ConcurrentUpdateError, MemoryStore
+from memory_manager.models import MemoryPreSaveDraft, MemoryRecord
+from memory_manager.validation import validate_draft
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="memory", description="Manage your local memory library")
+    parser.add_argument("--data-dir", type=Path, required=True, help="Directory containing memory.sqlite")
+    commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("init", help="Initialize the local database")
+    commands.add_parser("status", help="Count saved changes awaiting a search index update")
+
+    create = commands.add_parser("create", help="Preview and save a memory")
+    create.add_argument("--title", required=True)
+    add_body_arguments(create, required=True)
+    create.add_argument("--alias", action="append", default=[])
+
+    update = commands.add_parser("update", help="Preview and edit a memory")
+    update.add_argument("id")
+    update.add_argument("--title")
+    add_body_arguments(update)
+    aliases = update.add_mutually_exclusive_group()
+    aliases.add_argument("--alias", action="append", help="Replace aliases; repeat for multiple aliases")
+    aliases.add_argument("--clear-aliases", action="store_true")
+
+    listing = commands.add_parser("list", help="List active memories or recoverable deleted memories")
+    listing.add_argument("--deleted", action="store_true")
+    add_page_arguments(listing)
+
+    show = commands.add_parser("show", help="Read a memory or one of its retained versions")
+    show.add_argument("id")
+    selection = show.add_mutually_exclusive_group()
+    selection.add_argument("--deleted", action="store_true")
+    selection.add_argument("--revision", help="Retained version ID")
+
+    history = commands.add_parser("history", help="List retained versions and their expiry dates")
+    history.add_argument("id")
+    add_page_arguments(history)
+
+    delete = commands.add_parser("delete", help="Preview and soft-delete a memory")
+    delete.add_argument("id")
+
+    restore = commands.add_parser("restore", help="Preview and restore deleted or historical content")
+    restore.add_argument("id")
+    restore.add_argument("--revision", help="Retained version ID; omit to restore a deleted memory")
+    return parser
+
+
+def add_body_arguments(parser: argparse.ArgumentParser, *, required: bool = False) -> None:
+    body = parser.add_mutually_exclusive_group(required=required)
+    body.add_argument("--body")
+    body.add_argument("--body-file", type=Path, help="Read the body from a UTF-8 text file")
+
+
+def add_page_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--limit", type=int, default=50)
+    parser.add_argument("--offset", type=int, default=0)
+
+
+def read_body(args: argparse.Namespace) -> str | None:
+    if args.body_file is not None:
+        return args.body_file.expanduser().read_text(encoding="utf-8")
+    return args.body
+
+
+def print_json(value: object) -> None:
+    # JSON escaping keeps stored control characters from acting as terminal commands.
+    print(json.dumps(value, indent=2, default=str, ensure_ascii=True))
+
+
+def preview_draft(draft: MemoryPreSaveDraft) -> None:
+    validate_draft(draft)
+    print_json(asdict(draft))
+    print(f"Body: {len(draft.body)} / {MemoryConfig.RECORD_BODY_CHARACTER_LIMIT} characters")
+
+
+def confirm() -> bool:
+    try:
+        approved = input("Type yes to approve: ").strip().lower() == "yes"
+    except EOFError:
+        approved = False
+    if not approved:
+        print("Cancelled; no changes made")
+    return approved
+
+
+def print_saved(record: MemoryRecord) -> None:
+    print("Memory saved")
+    print(f"ID: {record.id}")
+    print("Search index update pending")
+
+
+class MemoryCLI:
+    def __init__(self, store: MemoryStore) -> None:
+        self.store = store
+
+    def run(self, args: argparse.Namespace) -> None:
+        if args.command == "init":
+            self.store.initialize()
+            print(f"Memory database ready: {self.store.config.memory_database}")
+        elif args.command == "status":
+            count = self.store.pending_index_update_count()
+            print(f"Pending search index updates: {count}")
+        elif args.command == "create":
+            self.create(args)
+        elif args.command == "update":
+            self.update(args)
+        elif args.command == "delete":
+            self.delete(args.id)
+        elif args.command == "restore":
+            self.restore(args)
+        elif args.command == "list":
+            listing = self.store.list_deleted if args.deleted else self.store.list_records
+            print_json([asdict(record) for record in listing(limit=args.limit, offset=args.offset)])
+        elif args.command == "history":
+            print_json([asdict(revision) for revision in self.store.history(
+                args.id, limit=args.limit, offset=args.offset,
+            )])
+        elif args.command == "show":
+            self.show(args)
+
+    def create(self, args: argparse.Namespace) -> None:
+        draft = MemoryPreSaveDraft(title=args.title, body=read_body(args), aliases=tuple(args.alias))
+        preview_draft(draft)
+        if confirm():
+            print_saved(self.store.create(draft))
+
+    def update(self, args: argparse.Namespace) -> None:
+        current = self.store.fetch(args.id)
+        body = read_body(args)
+        if args.title is None and body is None and args.alias is None and not args.clear_aliases:
+            raise ValueError("Provide a title, body, or alias change")
+        aliases = current.aliases
+        if args.clear_aliases:
+            aliases = ()
+        elif args.alias is not None:
+            aliases = tuple(args.alias)
+        draft = MemoryPreSaveDraft(
+            title=args.title if args.title is not None else current.title,
+            body=body if body is not None else current.body, aliases=aliases,
+        )
+        validate_draft(draft)
+        print("Current memory:")
+        print_json(asdict(current))
+        print("Proposed memory:")
+        preview_draft(draft)
+        if confirm():
+            print_saved(self.store.update(args.id, draft, expected_updated_at=current.updated_at))
+
+    def delete(self, memory_id: str) -> None:
+        current = self.store.fetch(memory_id)
+        print("Memory to delete:")
+        print_json(asdict(current))
+        print(f"Recovery window: {self.store.config.recovery_retention_days} days")
+        if confirm():
+            self.store.delete(memory_id, expected_updated_at=current.updated_at)
+            print("Memory deleted")
+            print("Search index update pending")
+
+    def restore(self, args: argparse.Namespace) -> None:
+        try:
+            current = self.store.fetch(args.id)
+        except LookupError:
+            current = self.store.fetch_deleted(args.id)
+        if args.revision is not None:
+            content = self.store.fetch_revision(args.id, args.revision).record
+        elif current.deleted_at is not None:
+            content = current
+        else:
+            raise ValueError("Provide --revision when restoring an active memory")
+        draft = MemoryPreSaveDraft(title=content.title, body=content.body, aliases=content.aliases)
+        validate_draft(draft)
+        print("Current memory:")
+        print_json(asdict(current))
+        print("Content to restore:")
+        preview_draft(draft)
+        if confirm():
+            print_saved(self.store.restore(
+                args.id, revision_id=args.revision, expected_updated_at=current.updated_at,
+            ))
+
+    def show(self, args: argparse.Namespace) -> None:
+        if args.revision is not None:
+            print_json(asdict(self.store.fetch_revision(args.id, args.revision)))
+        elif args.deleted:
+            print_json(asdict(self.store.fetch_deleted(args.id)))
+        else:
+            print_json(asdict(self.store.fetch(args.id)))
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    try:
+        config = MemoryConfig(data_directory=args.data_dir.expanduser().resolve())
+        MemoryCLI(MemoryStore(config)).run(args)
+    except (ValueError, LookupError, ConcurrentUpdateError, OSError, sqlite3.Error) as error:
+        print(f"Error: {error}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print("Interrupted", file=sys.stderr)
+        return 130
+    return 0

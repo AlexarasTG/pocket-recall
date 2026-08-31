@@ -10,5 +10,24 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []
 
+[project.scripts]
+memory = "memory_manager.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "black>=26",
+    "isort>=8",
+]
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.isort]
+profile = "black"
+
+[tool.black]
+line-length = 120
+skip-string-normalization = true
+
+[tool.ruff.lint]
+ignore = ["I001"]

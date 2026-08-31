@@ -28,6 +28,16 @@ class MemoryRecord:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class ArchivedMemoryEntry:
+    """An archived version that can be restored before its expiry date."""
+
+    id: str
+    record: MemoryRecord
+    retained_at: datetime
+    expires_at: datetime
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class SearchCandidate:
     """Compact recall result; scores rank within a tier, not factual truth."""
 

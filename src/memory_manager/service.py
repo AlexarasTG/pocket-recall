@@ -86,5 +86,5 @@ class MemoryService(Protocol):
         ...
 
     def fetch(self, memory_id: str) -> MemoryRecord:
-        """Read one selected, non-deleted memory in full. The CLI show command uses this too."""
+        """Read one selected, non-deleted memory in full. The CLI read ID command uses this too."""
         ...

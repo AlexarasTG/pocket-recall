@@ -17,38 +17,24 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="memory", description="Manage your local memory library")
     parser.add_argument("--data-dir", type=Path, required=True, help="Directory containing memory.sqlite")
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("init", help="Initialize local storage and its search index")
-    commands.add_parser("status", help="Count saved changes awaiting a search index update")
+    save = commands.add_parser("save", help="Preview a new memory, or update an existing ID")
+    save.add_argument("id", nargs="?", help="Existing memory ID; omit to create a memory")
+    save.add_argument("--title")
+    add_body_arguments(save)
+    aliases = save.add_mutually_exclusive_group()
+    aliases.add_argument("--alias", action="append", help="Replace aliases; repeat for multiple aliases")
+    aliases.add_argument("--clear-aliases", action="store_true", help="Remove aliases from an existing memory")
+
+    read = commands.add_parser("read", help="List summaries, or read one memory by ID")
+    read.add_argument("id", nargs="?", help="Memory ID; omit to list summaries")
+    selection = read.add_mutually_exclusive_group()
+    selection.add_argument("--deleted", action="store_true", help="Read deleted memories available for recovery")
+    selection.add_argument("--history", action="store_true", help="List archived versions of the supplied ID")
+    selection.add_argument("--revision", help="Read one archived version of the supplied ID in full")
+    add_page_arguments(read)
+
     search = commands.add_parser("search", help="Find compact memory candidates")
     search.add_argument("query", help="Focused words or a title/alias; quote multiword queries")
-    commands.add_parser("reindex", help="Rebuild search data from saved memories without changing them")
-
-    create = commands.add_parser("create", help="Preview and save a memory")
-    create.add_argument("--title", required=True)
-    add_body_arguments(create, required=True)
-    create.add_argument("--alias", action="append", default=[])
-
-    update = commands.add_parser("update", help="Preview and edit a memory")
-    update.add_argument("id")
-    update.add_argument("--title")
-    add_body_arguments(update)
-    aliases = update.add_mutually_exclusive_group()
-    aliases.add_argument("--alias", action="append", help="Replace aliases; repeat for multiple aliases")
-    aliases.add_argument("--clear-aliases", action="store_true")
-
-    listing = commands.add_parser("list", help="List active memories or recoverable deleted memories")
-    listing.add_argument("--deleted", action="store_true")
-    add_page_arguments(listing)
-
-    show = commands.add_parser("show", help="Read a memory or one of its retained versions")
-    show.add_argument("id")
-    selection = show.add_mutually_exclusive_group()
-    selection.add_argument("--deleted", action="store_true")
-    selection.add_argument("--revision", help="Retained version ID")
-
-    history = commands.add_parser("history", help="List retained versions and their expiry dates")
-    history.add_argument("id")
-    add_page_arguments(history)
 
     delete = commands.add_parser("delete", help="Preview and soft-delete a memory")
     delete.add_argument("id")
@@ -56,18 +42,24 @@ def build_parser() -> argparse.ArgumentParser:
     restore = commands.add_parser("restore", help="Preview and restore deleted or historical content")
     restore.add_argument("id")
     restore.add_argument("--revision", help="Retained version ID; omit to restore a deleted memory")
+
+    maintenance = commands.add_parser("maintenance", help="Initialize, inspect, or rebuild local storage")
+    actions = maintenance.add_subparsers(dest="maintenance_command", required=True)
+    actions.add_parser("init", help="Initialize local storage and its search index")
+    actions.add_parser("status", help="Count saved changes awaiting a search index update")
+    actions.add_parser("reindex", help="Rebuild search data from saved memories without changing them")
     return parser
 
 
-def add_body_arguments(parser: argparse.ArgumentParser, *, required: bool = False) -> None:
-    body = parser.add_mutually_exclusive_group(required=required)
+def add_body_arguments(parser: argparse.ArgumentParser) -> None:
+    body = parser.add_mutually_exclusive_group()
     body.add_argument("--body")
     body.add_argument("--body-file", type=Path, help="Read the body from a UTF-8 text file")
 
 
 def add_page_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--limit", type=int, default=50)
-    parser.add_argument("--offset", type=int, default=0)
+    parser.add_argument("--limit", type=int, help="Listing size (default: 50); not for reading one version")
+    parser.add_argument("--offset", type=int, help="Listing offset (default: 0); not for reading one version")
 
 
 def read_body(args: argparse.Namespace) -> str | None:
@@ -79,6 +71,12 @@ def read_body(args: argparse.Namespace) -> str | None:
 def print_json(value: object) -> None:
     # JSON escaping keeps stored control characters from acting as terminal commands.
     print(json.dumps(value, indent=2, default=str, ensure_ascii=True))
+
+
+def record_summary(record: MemoryRecord) -> dict[str, object]:
+    summary = asdict(record)
+    del summary["body"]
+    return summary
 
 
 def preview_draft(draft: MemoryPreSaveDraft) -> None:
@@ -107,42 +105,67 @@ class MemoryCLI:
         self.store = store
 
     def run(self, args: argparse.Namespace) -> None:
-        if args.command == "init":
-            self.store.initialize()
-            print(f"Memory database ready: {self.store.config.memory_database}")
-            self.print_index_status()
-        elif args.command == "status":
-            count = self.store.pending_index_update_count()
-            print(f"Pending search index updates: {count}")
-            self.print_index_status()
+        if args.command == "save":
+            self.save(args)
+        elif args.command == "read":
+            self.read(args)
         elif args.command == "search":
             results = self.store.search(args.query)
             print_json(asdict(results))
             if results.index_update_pending:
                 print("Index update pending; results may be incomplete", file=sys.stderr)
-        elif args.command == "reindex":
-            self.store.reindex()
-            self.print_index_status()
-        elif args.command == "create":
-            self.create(args)
-        elif args.command == "update":
-            self.update(args)
         elif args.command == "delete":
             self.delete(args.id)
         elif args.command == "restore":
             self.restore(args)
-        elif args.command == "list":
-            listing = self.store.list_deleted if args.deleted else self.store.list_records
-            print_json([asdict(record) for record in listing(limit=args.limit, offset=args.offset)])
-        elif args.command == "history":
-            print_json([asdict(revision) for revision in self.store.history(
-                args.id, limit=args.limit, offset=args.offset,
-            )])
-        elif args.command == "show":
+        elif args.command == "maintenance":
+            self.maintenance(args)
+
+    def save(self, args: argparse.Namespace) -> None:
+        if args.id is not None:
+            self.update(args)
+        else:
+            if args.clear_aliases:
+                raise ValueError("--clear-aliases requires an existing memory ID")
+            self.create(args)
+
+    def read(self, args: argparse.Namespace) -> None:
+        if args.id is None and (args.history or args.revision is not None):
+            raise ValueError("--history and --revision require a memory ID")
+        if args.id is not None and not args.history:
+            if args.limit is not None or args.offset is not None:
+                raise ValueError("--limit and --offset are only for listings, not reading one version")
             self.show(args)
+            return
+
+        limit = args.limit if args.limit is not None else 50
+        offset = args.offset if args.offset is not None else 0
+        if args.history:
+            print_json([
+                {**asdict(entry), "record": record_summary(entry.record)}
+                for entry in self.store.history(args.id, limit=limit, offset=offset)
+            ])
+        else:
+            listing = self.store.list_deleted if args.deleted else self.store.list_records
+            print_json([record_summary(record) for record in listing(limit=limit, offset=offset)])
+
+    def maintenance(self, args: argparse.Namespace) -> None:
+        if args.maintenance_command == "init":
+            self.store.initialize()
+            print(f"Memory database ready: {self.store.config.memory_database}")
+        elif args.maintenance_command == "status":
+            count = self.store.pending_index_update_count()
+            print(f"Pending search index updates: {count}")
+        elif args.maintenance_command == "reindex":
+            self.store.reindex()
+        self.print_index_status()
 
     def create(self, args: argparse.Namespace) -> None:
-        draft = MemoryPreSaveDraft(title=args.title, body=read_body(args), aliases=tuple(args.alias))
+        body = read_body(args)
+        if args.title is None or body is None:
+            raise ValueError("Creating a memory requires --title and either --body or --body-file")
+        draft = MemoryPreSaveDraft(title=args.title, body=body, aliases=tuple(args.alias or ()))
+        print("Create memory:")
         preview_draft(draft)
         if confirm():
             print_saved(self.store.create(draft))
@@ -163,6 +186,7 @@ class MemoryCLI:
             body=body if body is not None else current.body, aliases=aliases,
         )
         validate_draft(draft)
+        print("Update memory:")
         print("Current memory:")
         print_json(asdict(current))
         print("Proposed memory:")

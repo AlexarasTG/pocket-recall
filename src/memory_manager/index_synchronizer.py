@@ -29,7 +29,7 @@ class IndexSynchronizer:
             ).fetchall()
             with self.index.write() as indexed:
                 if not indexed.execute("SELECT ready FROM index_state WHERE id = 1").fetchone()[0]:
-                    raise ValueError("Search index is not ready; run memory reindex")
+                    raise ValueError("Search index is not ready; run memory maintenance reindex")
                 for entry in pending:
                     row = canonical.execute(
                         "SELECT * FROM memories WHERE id = ? AND deleted_at IS NULL", (entry[0],)

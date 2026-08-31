@@ -96,7 +96,7 @@ class SQLiteDatabase:
     @contextmanager
     def read(self) -> Iterator[sqlite3.Connection]:
         if not self.path.is_file():
-            raise ValueError(f"Database is not initialized; run memory init: {self.path}")
+            raise ValueError(f"Database is not initialized; run memory maintenance init: {self.path}")
         with self._connect() as connection:
             version = connection.execute("PRAGMA user_version").fetchone()[0]
             application = connection.execute("PRAGMA application_id").fetchone()[0]

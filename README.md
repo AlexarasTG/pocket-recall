@@ -29,27 +29,42 @@ Requires Python 3.11 or newer with SQLite FTS5 support. The CLI uses only the st
 Run from the project directory without installing dependencies:
 
 ```sh
-PYTHONPATH=src python3 -m memory_manager --data-dir /path/to/private/library init
-PYTHONPATH=src python3 -m memory_manager --data-dir /path/to/private/library create \
+PYTHONPATH=src python3 -m memory_manager --data-dir /path/to/private/library maintenance init
+PYTHONPATH=src python3 -m memory_manager --data-dir /path/to/private/library save \
   --title "Example concept" --body "A short explanation." --alias "EC"
 ```
 
 Installing the package also provides the `memory` command. Every command takes
-`--data-dir` before the command name. `init` is explicit and safe to repeat;
-`reindex` can recreate a missing search index; other commands do not create missing databases.
+`--data-dir` before the command name. `maintenance init` is explicit and safe to
+repeat; `maintenance reindex` can recreate a missing search index. Other commands
+do not create missing databases.
 
-Commands:
+Everyday commands:
 
-- `create --title TEXT --body TEXT [--alias TEXT ...]`
-- `list [--deleted] [--limit NUMBER] [--offset NUMBER]`
-- `show ID [--deleted | --revision REVISION_ID]`
-- `update ID [--title TEXT] [--body TEXT] [--alias TEXT ... | --clear-aliases]`
-- `delete ID`
-- `history ID [--limit NUMBER] [--offset NUMBER]`
-- `restore ID [--revision REVISION_ID]`
+- `save [ID] [--title TEXT] [--body TEXT] [--alias TEXT ... | --clear-aliases]`
+- `read [ID] [--deleted | --history | --revision REVISION_ID] [--limit NUMBER] [--offset NUMBER]`
 - `search "FOCUSED QUERY"`
-- `reindex`
-- `status`
+- `delete ID`
+- `restore ID [--revision REVISION_ID]`
+
+Maintenance commands:
+
+- `maintenance init`
+- `maintenance status`
+- `maintenance reindex`
+
+`save` without an ID creates a memory and requires a title and body. `save ID`
+updates that exact memory; an unknown or deleted ID fails instead of creating
+one. Its preview clearly identifies Create or Update. `--clear-aliases` requires
+an existing ID.
+
+`read` lists summaries without bodies. `read ID` returns one full current memory.
+`read --deleted` lists deleted summaries, and `read ID --deleted` reads one deleted
+memory in full. `read ID --history` lists archived-version summaries and expiry
+dates; `read ID --revision REVISION_ID` reads the selected archived version in full.
+The three selection flags cannot be combined. History and revision selection
+require a memory ID. Pagination applies only to listings (default limit 50,
+offset 0); passing pagination flags when reading one version is an error.
 
 Use `--body-file PATH` instead of `--body` to read UTF-8 text. Creating, updating,
 deleting, and restoring all show a preview and require typing `yes`; there is
@@ -64,7 +79,7 @@ guarantee that every secret or production payload can be identified. Store
 curated explanations, not credentials or raw logs. Detection may also reject
 examples that look like credential assignments.
 
-Deleted records and older versions are recoverable for 60 days. `history` shows
+Deleted records and older versions are recoverable for 60 days. `read ID --history` shows
 revision IDs and expiry dates. Restoration preserves the memory ID and creation
 date, refreshes the update date, and retains the displaced version. Expired
 recovery data is hidden immediately and removed during subsequent approved
@@ -72,10 +87,10 @@ writes; it cannot be restored through the application.
 
 Saving a memory and marking its search-index update as pending is one database
 transaction. Indexing is attempted immediately afterward. A failed index update
-does not undo the save; its pending request remains durable. `status` reports
-pending requests and checks index completeness. `reindex` rebuilds the disposable
+does not undo the save; its pending request remains durable. `maintenance status` reports
+pending requests and checks index completeness. `maintenance reindex` rebuilds the disposable
 index from current active records without changing their content or timestamps.
-Direct `show` and `list` read saved records, not the search index.
+The `read` command reads saved records, not the search index.
 
 Search tries whole title/alias matches first, ignoring case and extra whitespace.
 If any exist, only that tier is returned. Otherwise, all query words must match
@@ -97,7 +112,7 @@ Search returns JSON with `candidates` and `index_update_pending`, not full recor
 Up to five candidates include a match kind (`exact`, `lexical`, or `typo`), score,
 and an excerpt of at most 160 characters including ellipses. Excerpts surround
 the first body match, or use the opening when only a title/alias matched. Use
-`show ID` to fetch a selected record. Pending indexing produces an incomplete-results
+`read ID` to fetch a selected record. Pending indexing produces an incomplete-results
 warning; unreadable indexes produce errors rather than empty matches. Results
 exclude deleted records and indexed versions that no longer match canonical storage.
 

@@ -52,12 +52,12 @@ class SearchStore(SQLiteDatabase):
             version = connection.execute("PRAGMA search.user_version").fetchone()[0]
             application = connection.execute("PRAGMA search.application_id").fetchone()[0]
             if version != self.schema_version or application != self.application_id:
-                raise ValueError("Unsupported search index; rebuild it with memory reindex")
+                raise ValueError("Unsupported search index; rebuild it with memory maintenance reindex")
             connection.execute("BEGIN")
             # Pin canonical state before reading the independently committed index.
             connection.execute("SELECT count(*) FROM memories").fetchone()
             if not connection.execute("SELECT ready FROM search.index_state WHERE id = 1").fetchone()[0]:
-                raise ValueError("Search index is not ready; run memory reindex")
+                raise ValueError("Search index is not ready; run memory maintenance reindex")
             yield connection
 
     def remove(self, connection: sqlite3.Connection, memory_id: str) -> None:

@@ -1,11 +1,11 @@
 """Terminal commands that ask for approval before changing saved memories."""
 
 import argparse
-from dataclasses import asdict
 import json
-from pathlib import Path
 import sqlite3
 import sys
+from dataclasses import asdict
+from pathlib import Path
 
 from memory_manager.config import MemoryConfig
 from memory_manager.errors import MemoryLookupError
@@ -142,10 +142,12 @@ class MemoryCLI:
         limit = args.limit if args.limit is not None else 50
         offset = args.offset if args.offset is not None else 0
         if args.history:
-            print_json([
-                {**asdict(entry), "record": record_summary(entry.record)}
-                for entry in self.store.history(args.id, limit=limit, offset=offset)
-            ])
+            print_json(
+                [
+                    {**asdict(entry), "record": record_summary(entry.record)}
+                    for entry in self.store.history(args.id, limit=limit, offset=offset)
+                ]
+            )
         else:
             listing = self.store.list_deleted if args.deleted else self.store.list_records
             print_json([record_summary(record) for record in listing(limit=limit, offset=offset)])
@@ -181,7 +183,8 @@ class MemoryCLI:
             aliases = tuple(args.alias)
         draft = MemoryPreSaveDraft(
             title=args.title if args.title is not None else current.title,
-            body=body if body is not None else current.body, aliases=aliases,
+            body=body if body is not None else current.body,
+            aliases=aliases,
         )
         validate_draft(draft)
         print("Update memory:")
@@ -221,9 +224,13 @@ class MemoryCLI:
         print("Content to restore:")
         preview_draft(draft)
         if confirm():
-            print_saved(self.store.restore(
-                args.id, revision_id=args.revision, expected_updated_at=current.updated_at,
-            ))
+            print_saved(
+                self.store.restore(
+                    args.id,
+                    revision_id=args.revision,
+                    expected_updated_at=current.updated_at,
+                )
+            )
             self.print_index_status()
 
     def print_index_status(self) -> None:

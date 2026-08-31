@@ -3,12 +3,16 @@
 import sqlite3
 from typing import Literal
 
+from memory_manager.archived_memory_store import record_from_row
 from memory_manager.config import MemoryConfig
 from memory_manager.database import MemoryDatabase
-from memory_manager.archived_memory_store import record_from_row
 from memory_manager.models import SearchCandidate, SearchResults
 from memory_manager.search_store import SearchStore
-from memory_manager.search_text_processing import body_excerpt, keyword_expression, query_terms
+from memory_manager.search_text_processing import (
+    body_excerpt,
+    keyword_expression,
+    query_terms,
+)
 
 
 class SearchCoordinator:
@@ -32,14 +36,23 @@ class SearchCoordinator:
             return SearchResults(candidates=candidates, index_update_pending=pending)
 
     def _search(
-        self, connection: sqlite3.Connection, query: str, terms: tuple[str, ...], expression: str,
+        self,
+        connection: sqlite3.Connection,
+        query: str,
+        terms: tuple[str, ...],
+        expression: str,
     ) -> tuple[SearchCandidate, ...]:
         exact = self.index.exact_matches(connection, query, self.config.max_candidates_per_search)
         if exact:
-            return tuple(self._candidate(
-                row, "exact", 1.0,
-                self.index.highlighted_body(connection, row["indexed_rowid"], expression) if terms else None,
-            ) for row in exact)
+            return tuple(
+                self._candidate(
+                    row,
+                    "exact",
+                    1.0,
+                    self.index.highlighted_body(connection, row["indexed_rowid"], expression) if terms else None,
+                )
+                for row in exact
+            )
         if not terms:
             return ()
         matches = self.index.keyword_matches(connection, expression, self.config)
@@ -53,12 +66,19 @@ class SearchCoordinator:
         return ()
 
     def _candidate(
-        self, row: sqlite3.Row, kind: Literal["exact", "lexical", "typo"],
-        score: float, highlighted_body: str | None,
+        self,
+        row: sqlite3.Row,
+        kind: Literal["exact", "lexical", "typo"],
+        score: float,
+        highlighted_body: str | None,
     ) -> SearchCandidate:
         record = record_from_row(row)
         return SearchCandidate(
-            id=record.id, title=record.title, aliases=record.aliases,
-            updated_at=record.updated_at, match_kind=kind, score=score,
+            id=record.id,
+            title=record.title,
+            aliases=record.aliases,
+            updated_at=record.updated_at,
+            match_kind=kind,
+            score=score,
             excerpt=body_excerpt(record.body, highlighted_body, self.config.SEARCH_PREVIEW_CHARACTER_LIMIT),
         )

@@ -3,7 +3,12 @@
 from datetime import datetime
 from typing import Protocol
 
-from memory_manager.models import MemoryPreSaveDraft, MemoryRecord, ArchivedMemoryEntry, SearchResults
+from memory_manager.models import (
+    ArchivedMemoryEntry,
+    MemoryPreSaveDraft,
+    MemoryRecord,
+    SearchResults,
+)
 
 
 class MemoryService(Protocol):
@@ -28,27 +33,40 @@ class MemoryService(Protocol):
         ...
 
     def update(
-        self, memory_id: str, draft: MemoryPreSaveDraft,
-        *, expected_updated_at: datetime | None = None,
+        self,
+        memory_id: str,
+        draft: MemoryPreSaveDraft,
+        *,
+        expected_updated_at: datetime | None = None,
     ) -> MemoryRecord:
         """Save approved changes, keep the previous version, and set updated_at to the edit time."""
         ...
 
     def delete(
-        self, memory_id: str, *, expected_updated_at: datetime | None = None,
+        self,
+        memory_id: str,
+        *,
+        expected_updated_at: datetime | None = None,
     ) -> None:
         """Remove a memory from normal reads and searches, but keep it available for recovery."""
         ...
 
     def restore(
-        self, memory_id: str, *, revision_id: str | None = None,
+        self,
+        memory_id: str,
+        *,
+        revision_id: str | None = None,
         expected_updated_at: datetime | None = None,
     ) -> MemoryRecord:
         """Bring back a deleted memory or an older version, and request a search-index update."""
         ...
 
     def history(
-        self, memory_id: str, *, limit: int = 50, offset: int = 0,
+        self,
+        memory_id: str,
+        *,
+        limit: int = 50,
+        offset: int = 0,
     ) -> tuple[ArchivedMemoryEntry, ...]:
         """List older versions that can still be restored, most recently archived first."""
         ...
@@ -61,15 +79,11 @@ class MemoryService(Protocol):
         """Read a deleted memory before its recovery deadline, not for normal agent recall."""
         ...
 
-    def list_records(
-        self, *, limit: int = 50, offset: int = 0
-    ) -> tuple[MemoryRecord, ...]:
+    def list_records(self, *, limit: int = 50, offset: int = 0) -> tuple[MemoryRecord, ...]:
         """List non-deleted memories for the user to inspect, sorted by ID from lowest to highest."""
         ...
 
-    def list_deleted(
-        self, *, limit: int = 50, offset: int = 0
-    ) -> tuple[MemoryRecord, ...]:
+    def list_deleted(self, *, limit: int = 50, offset: int = 0) -> tuple[MemoryRecord, ...]:
         """List deleted memories for recovery, not agent recall. Sort IDs from lowest to highest."""
         ...
 

@@ -1,8 +1,8 @@
 """Settings for paths, search, and storage. Creating these settings starts nothing and creates no files."""
 
 from dataclasses import dataclass
-from pathlib import Path
 from math import isfinite
+from pathlib import Path
 from typing import ClassVar
 
 

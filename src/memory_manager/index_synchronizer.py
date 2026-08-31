@@ -1,7 +1,7 @@
 """Update the search index from saved memories. Keep failed updates for retry."""
 
-from memory_manager.database import MemoryDatabase
 from memory_manager.archived_memory_store import record_from_row
+from memory_manager.database import MemoryDatabase
 from memory_manager.search_store import SearchStore
 
 

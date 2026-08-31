@@ -1,12 +1,12 @@
 """Keep older memory versions for recovery. Save them together with the changes that replace them."""
 
-from datetime import datetime, timedelta
 import json
 import sqlite3
+from datetime import datetime, timedelta
 from uuid import uuid4
 
 from memory_manager.errors import MemoryLookupError
-from memory_manager.models import MemoryRecord, ArchivedMemoryEntry
+from memory_manager.models import ArchivedMemoryEntry, MemoryRecord
 
 
 def record_from_row(row: sqlite3.Row) -> MemoryRecord:
@@ -44,17 +44,27 @@ class ArchivedMemoryStore:
                 deleted_at, retained_at, expires_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                str(uuid4()), record.id, record.title, record.body,
-                json.dumps(record.aliases), record.created_at.isoformat(),
+                str(uuid4()),
+                record.id,
+                record.title,
+                record.body,
+                json.dumps(record.aliases),
+                record.created_at.isoformat(),
                 record.updated_at.isoformat(),
                 record.deleted_at.isoformat() if record.deleted_at else None,
-                now.isoformat(), (now + timedelta(days=retention_days)).isoformat(),
+                now.isoformat(),
+                (now + timedelta(days=retention_days)).isoformat(),
             ),
         )
 
     def list_for_memory(
-        self, connection: sqlite3.Connection, memory_id: str, now: datetime,
-        *, limit: int, offset: int,
+        self,
+        connection: sqlite3.Connection,
+        memory_id: str,
+        now: datetime,
+        *,
+        limit: int,
+        offset: int,
     ) -> tuple[ArchivedMemoryEntry, ...]:
         rows = connection.execute(
             """SELECT * FROM revisions WHERE memory_id = ? AND expires_at > ?
@@ -64,8 +74,11 @@ class ArchivedMemoryStore:
         return tuple(archived_entry_from_row(row) for row in rows)
 
     def fetch(
-        self, connection: sqlite3.Connection, memory_id: str,
-        revision_id: str, now: datetime,
+        self,
+        connection: sqlite3.Connection,
+        memory_id: str,
+        revision_id: str,
+        now: datetime,
     ) -> ArchivedMemoryEntry:
         row = connection.execute(
             """SELECT * FROM revisions

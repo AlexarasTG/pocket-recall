@@ -1,15 +1,19 @@
 """Store search-index data in SQLite and run the queries used to find matches."""
 
-from contextlib import contextmanager
 import sqlite3
+from contextlib import contextmanager
 from typing import Iterator
 
 from memory_manager.config import MemoryConfig
 from memory_manager.database import MemoryDatabase, SQLiteDatabase
 from memory_manager.models import MemoryRecord
 from memory_manager.search_text_processing import (
-    MAX_TYPO_ALTERNATIVES, MIN_TYPO_WORD_LENGTH,
-    excerpt_marker, is_one_typo_away, normalize_exact, words,
+    MAX_TYPO_ALTERNATIVES,
+    MIN_TYPO_WORD_LENGTH,
+    excerpt_marker,
+    is_one_typo_away,
+    normalize_exact,
+    words,
 )
 
 
@@ -91,15 +95,13 @@ class SearchStore(SQLiteDatabase):
         connection.execute("DELETE FROM indexed_memories")
 
     def has_pending_updates(self, connection: sqlite3.Connection) -> bool:
-        return bool(connection.execute(
-            """SELECT EXISTS(SELECT 1 FROM pending_index_updates)
+        return bool(connection.execute("""SELECT EXISTS(SELECT 1 FROM pending_index_updates)
                 OR EXISTS(
                     SELECT 1 FROM memories AS m
                     LEFT JOIN search.indexed_memories AS i
                         ON i.memory_id = m.id AND i.updated_at = m.updated_at
                     WHERE m.deleted_at IS NULL AND i.memory_id IS NULL
-                )"""
-        ).fetchone()[0])
+                )""").fetchone()[0])
 
     def exact_matches(self, connection: sqlite3.Connection, query: str, limit: int) -> list[sqlite3.Row]:
         return connection.execute(
@@ -113,7 +115,10 @@ class SearchStore(SQLiteDatabase):
         ).fetchall()
 
     def keyword_matches(
-        self, connection: sqlite3.Connection, expression: str, config: MemoryConfig,
+        self,
+        connection: sqlite3.Connection,
+        expression: str,
+        config: MemoryConfig,
     ) -> list[sqlite3.Row]:
         return connection.execute(
             """SELECT m.*, -bm25(memory_text, ?, ?, ?) AS score,
@@ -125,9 +130,11 @@ class SearchStore(SQLiteDatabase):
                WHERE memory_text MATCH ? AND m.deleted_at IS NULL
                ORDER BY score DESC, m.id LIMIT ?""",
             (
-                config.title_alias_search_weight, config.title_alias_search_weight,
+                config.title_alias_search_weight,
+                config.title_alias_search_weight,
                 config.body_search_weight,
-                expression, config.max_candidates_per_search,
+                expression,
+                config.max_candidates_per_search,
             ),
         ).fetchall()
 

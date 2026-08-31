@@ -2,7 +2,6 @@
 
 import re
 
-
 WORD_PATTERN = re.compile(r"[^\W_]+", re.UNICODE)
 MIN_TYPO_WORD_LENGTH = 5
 MAX_TYPO_ALTERNATIVES = 8
@@ -32,8 +31,7 @@ def query_terms(query: str) -> tuple[str, ...]:
 def keyword_expression(term_options: tuple[tuple[str, ...], ...]) -> str:
     # Every word is quoted so user text cannot become FTS operators or prefixes.
     return " AND ".join(
-        "(" + " OR ".join('"' + term.replace('"', '""') + '"' for term in options) + ")"
-        for options in term_options
+        "(" + " OR ".join('"' + term.replace('"', '""') + '"' for term in options) + ")" for options in term_options
     )
 
 
@@ -44,15 +42,12 @@ def is_one_typo_away(word: str, candidate: str) -> bool:
         if left == right:
             continue
         if len(word) < len(candidate):
-            return word[position:] == candidate[position + 1:]
+            return word[position:] == candidate[position + 1 :]
         if len(word) > len(candidate):
-            return word[position + 1:] == candidate[position:]
-        return (
-            word[position + 1:] == candidate[position + 1:]
-            or (
-                word[position:position + 2] == candidate[position:position + 2][::-1]
-                and word[position + 2:] == candidate[position + 2:]
-            )
+            return word[position + 1 :] == candidate[position:]
+        return word[position + 1 :] == candidate[position + 1 :] or (
+            word[position : position + 2] == candidate[position : position + 2][::-1]
+            and word[position + 2 :] == candidate[position + 2 :]
         )
     return abs(len(word) - len(candidate)) == 1
 

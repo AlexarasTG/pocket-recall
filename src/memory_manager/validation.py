@@ -6,7 +6,6 @@ import re
 from memory_manager.config import MemoryConfig
 from memory_manager.models import MemoryPreSaveDraft
 
-
 SECRET_PATTERNS = (
     re.compile(r"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----"),
     re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"),
@@ -37,8 +36,7 @@ def validate_draft(draft: MemoryPreSaveDraft) -> None:
     text = "\n".join(fields)
     # Ignore ordinary words after Bearer/Basic, including a sentence-ending period.
     authorization_token_found = any(
-        not match.group(1).rstrip(".").isalpha()
-        for match in AUTHORIZATION_PATTERN.finditer(text)
+        not match.group(1).rstrip(".").isalpha() for match in AUTHORIZATION_PATTERN.finditer(text)
     )
     if authorization_token_found or any(pattern.search(text) for pattern in SECRET_PATTERNS):
         raise ValueError("Possible credential or private key detected; remove it before saving")

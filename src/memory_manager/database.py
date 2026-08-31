@@ -1,11 +1,10 @@
 """Create database tables and manage SQLite connections."""
 
-from contextlib import contextmanager
-from pathlib import Path
 import os
 import sqlite3
+from contextlib import contextmanager
+from pathlib import Path
 from typing import Iterator
-
 
 SCHEMA_VERSION = 1
 APPLICATION_ID = 0x4D454D31
@@ -66,9 +65,7 @@ class SQLiteDatabase:
             application = connection.execute("PRAGMA application_id").fetchone()[0]
             if version == self.schema_version and application == self.application_id:
                 return
-            has_tables = connection.execute(
-                "SELECT 1 FROM sqlite_master WHERE type = 'table' LIMIT 1"
-            ).fetchone()
+            has_tables = connection.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' LIMIT 1").fetchone()
             if version or application or has_tables:
                 raise ValueError(f"Not an empty or supported database: {self.path}")
             for statement in self.schema:
@@ -78,9 +75,7 @@ class SQLiteDatabase:
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
-        connection = sqlite3.connect(
-            self.path.as_uri() + "?mode=rw", uri=True, isolation_level=None, timeout=5
-        )
+        connection = sqlite3.connect(self.path.as_uri() + "?mode=rw", uri=True, isolation_level=None, timeout=5)
         connection.row_factory = sqlite3.Row
         try:
             connection.execute("PRAGMA foreign_keys = ON")

@@ -8,8 +8,9 @@ dist/
 .ruff_cache/
 .mypy_cache/
 
-# Jetbrains
+# IDEA files
 .idea/
+.zed/
 
 # MacOS
 .DS_Store

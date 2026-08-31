@@ -3,8 +3,8 @@
 import json
 import re
 
-from memory_manager.config import MemoryConfig
-from memory_manager.models import MemoryPreSaveDraft
+from pocket_recall.config import MemoryConfig
+from pocket_recall.models import MemoryPreSaveDraft
 
 SECRET_PATTERNS = (
     re.compile(r"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----"),

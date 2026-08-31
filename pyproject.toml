@@ -3,15 +3,20 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "memory-manager"
+name = "pocket-recall"
 version = "0.1.0"
 description = "Local-first, agent-neutral memory with explicit writes and selective recall."
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "fastembed>=0.8,<0.9",
+    "huggingface-hub>=0.20,<2",
+    "numpy>=1.26,<3",
+    "onnxruntime>=1.24.2,<2",
+]
 
 [project.scripts]
-memory = "memory_manager.cli:main"
+memory = "pocket_recall.cli:main"
 
 [project.optional-dependencies]
 dev = [

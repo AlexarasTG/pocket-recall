@@ -2,12 +2,14 @@
 
 import sqlite3
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Iterator
 
-from memory_manager.config import MemoryConfig
-from memory_manager.database import MemoryDatabase, SQLiteDatabase
-from memory_manager.models import MemoryRecord
-from memory_manager.search_text_processing import (
+import numpy as np
+
+from pocket_recall.config import MemoryConfig
+from pocket_recall.models import MemoryRecord
+from pocket_recall.retrieval.search_text_processing import (
     MAX_TYPO_ALTERNATIVES,
     MIN_TYPO_WORD_LENGTH,
     excerpt_marker,
@@ -15,6 +17,7 @@ from memory_manager.search_text_processing import (
     normalize_exact,
     words,
 )
+from pocket_recall.storage.database import MemoryDatabase, SQLiteDatabase
 
 
 class SearchStore(SQLiteDatabase):
@@ -25,6 +28,7 @@ class SearchStore(SQLiteDatabase):
     """
 
     application_id = 0x4D534931
+    schema_version = 2
     schema = (
         "CREATE TABLE index_state (id INTEGER PRIMARY KEY CHECK (id = 1), ready INTEGER NOT NULL)",
         "INSERT INTO index_state VALUES (1, 0)",
@@ -48,6 +52,41 @@ class SearchStore(SQLiteDatabase):
         "CREATE INDEX search_words_by_memory ON search_words(memory_id)",
     )
 
+    def __init__(self, path: Path, specification: str, dimensions: int) -> None:
+        super().__init__(path)
+        self.specification = specification
+        self.dimensions = dimensions
+        self.vector_schema = (
+            "CREATE TABLE embedding_metadata (id INTEGER PRIMARY KEY CHECK (id = 1), specification TEXT NOT NULL)",
+            f"""CREATE TABLE memory_vectors (
+                memory_id TEXT PRIMARY KEY REFERENCES indexed_memories(memory_id) ON DELETE CASCADE,
+                embedding BLOB NOT NULL CHECK (length(embedding) = {dimensions * 4})
+            )""",
+        )
+        self.schema = type(self).schema + self.vector_schema
+
+    def initialize(self) -> None:
+        if self.path.is_file():
+            with self._connect() as connection:
+                connection.execute("BEGIN IMMEDIATE")
+                version = connection.execute("PRAGMA user_version").fetchone()[0]
+                application = connection.execute("PRAGMA application_id").fetchone()[0]
+                if version == 1 and application == self.application_id:
+                    for statement in self.vector_schema:
+                        connection.execute(statement)
+                    connection.execute("UPDATE index_state SET ready = 0 WHERE id = 1")
+                    connection.execute(f"PRAGMA user_version = {self.schema_version}")
+        super().initialize()
+
+    def is_ready(self, connection: sqlite3.Connection, *, schema: str = "main") -> bool:
+        row = connection.execute(f"""SELECT s.ready, e.specification FROM {schema}.index_state AS s
+                LEFT JOIN {schema}.embedding_metadata AS e ON e.id = s.id WHERE s.id = 1""").fetchone()
+        return bool(row and row["ready"] and row["specification"] == self.specification)
+
+    def mark_ready(self, connection: sqlite3.Connection) -> None:
+        connection.execute("INSERT OR REPLACE INTO embedding_metadata VALUES (1, ?)", (self.specification,))
+        connection.execute("UPDATE index_state SET ready = 1 WHERE id = 1")
+
     @contextmanager
     def snapshot(self, database: MemoryDatabase) -> Iterator[sqlite3.Connection]:
         with database.read() as connection:
@@ -60,8 +99,8 @@ class SearchStore(SQLiteDatabase):
             connection.execute("BEGIN")
             # Pin canonical state before reading the independently committed index.
             connection.execute("SELECT count(*) FROM memories").fetchone()
-            if not connection.execute("SELECT ready FROM search.index_state WHERE id = 1").fetchone()[0]:
-                raise ValueError("Search index is not ready; run memory maintenance reindex")
+            if not self.is_ready(connection, schema="search"):
+                raise ValueError("Search index is not ready for this model; run memory maintenance reindex")
             yield connection
 
     def remove(self, connection: sqlite3.Connection, memory_id: str) -> None:
@@ -71,7 +110,7 @@ class SearchStore(SQLiteDatabase):
         )
         connection.execute("DELETE FROM indexed_memories WHERE memory_id = ?", (memory_id,))
 
-    def replace(self, connection: sqlite3.Connection, record: MemoryRecord) -> None:
+    def replace(self, connection: sqlite3.Connection, record: MemoryRecord, embedding: bytes) -> None:
         self.remove(connection, record.id)
         cursor = connection.execute(
             "INSERT INTO indexed_memories (memory_id, updated_at) VALUES (?, ?)",
@@ -89,10 +128,13 @@ class SearchStore(SQLiteDatabase):
             "INSERT INTO search_words (word, word_length, memory_id) VALUES (?, ?, ?)",
             [(word, len(word), record.id) for word in words(" ".join((record.title, *record.aliases, record.body)))],
         )
+        connection.execute("INSERT INTO memory_vectors VALUES (?, ?)", (record.id, embedding))
 
     def clear(self, connection: sqlite3.Connection) -> None:
         connection.execute("DELETE FROM memory_text")
         connection.execute("DELETE FROM indexed_memories")
+        connection.execute("DROP TABLE memory_vectors")
+        connection.execute(self.vector_schema[1])
 
     def has_pending_updates(self, connection: sqlite3.Connection) -> bool:
         return bool(connection.execute("""SELECT EXISTS(SELECT 1 FROM pending_index_updates)
@@ -100,7 +142,8 @@ class SearchStore(SQLiteDatabase):
                     SELECT 1 FROM memories AS m
                     LEFT JOIN search.indexed_memories AS i
                         ON i.memory_id = m.id AND i.updated_at = m.updated_at
-                    WHERE m.deleted_at IS NULL AND i.memory_id IS NULL
+                    LEFT JOIN search.memory_vectors AS v ON v.memory_id = i.memory_id
+                    WHERE m.deleted_at IS NULL AND (i.memory_id IS NULL OR v.memory_id IS NULL)
                 )""").fetchone()[0])
 
     def exact_matches(self, connection: sqlite3.Connection, query: str, limit: int) -> list[sqlite3.Row]:
@@ -108,6 +151,7 @@ class SearchStore(SQLiteDatabase):
             """SELECT m.*, i.rowid AS indexed_rowid
                FROM search.exact_terms AS e
                JOIN search.indexed_memories AS i ON i.memory_id = e.memory_id
+               JOIN search.memory_vectors AS v ON v.memory_id = i.memory_id
                JOIN memories AS m ON m.id = i.memory_id AND m.updated_at = i.updated_at
                WHERE e.term = ? AND m.deleted_at IS NULL
                ORDER BY m.id LIMIT ?""",
@@ -126,6 +170,7 @@ class SearchStore(SQLiteDatabase):
                                 excerpt_marker(memory_text.body)) AS highlighted_body
                FROM search.memory_text
                JOIN search.indexed_memories AS i ON i.rowid = memory_text.rowid
+               JOIN search.memory_vectors AS v ON v.memory_id = i.memory_id
                JOIN memories AS m ON m.id = i.memory_id AND m.updated_at = i.updated_at
                WHERE memory_text MATCH ? AND m.deleted_at IS NULL
                ORDER BY score DESC, m.id LIMIT ?""",
@@ -147,12 +192,55 @@ class SearchStore(SQLiteDatabase):
         ).fetchone()
         return row[0] if row else None
 
+    def semantic_matches(
+        self,
+        connection: sqlite3.Connection,
+        query_embedding: bytes,
+        *,
+        threshold: float,
+        limit: int,
+        excluded_ids: tuple[str, ...] = (),
+    ) -> tuple[tuple[sqlite3.Row, float], ...]:
+        """Compare current vectors in small batches, then read only the winning records."""
+        query_vector = np.frombuffer(query_embedding, dtype="<f4")
+        if query_vector.shape != (self.dimensions,) or not np.isfinite(query_vector).all():
+            raise ValueError("Invalid query vector")
+        cursor = connection.execute("""SELECT v.memory_id, v.embedding FROM search.memory_vectors AS v
+               JOIN search.indexed_memories AS i ON i.memory_id = v.memory_id
+               JOIN memories AS m ON m.id = i.memory_id AND m.updated_at = i.updated_at
+               WHERE m.deleted_at IS NULL ORDER BY v.memory_id""")
+        best: list[tuple[str, float]] = []
+        while batch := cursor.fetchmany(256):
+            vectors = np.frombuffer(b"".join(row["embedding"] for row in batch), dtype="<f4")
+            if vectors.size != len(batch) * self.dimensions or not np.isfinite(vectors).all():
+                raise ValueError("Invalid stored vectors; run memory maintenance reindex")
+            # Dot products of normalized vectors give cosine similarity.
+            scores = np.clip(np.einsum("ij,j->i", vectors.reshape(-1, self.dimensions), query_vector), -1, 1)
+            best.extend(
+                (row["memory_id"], float(score))
+                for row, score in zip(batch, scores)
+                if score >= threshold and row["memory_id"] not in excluded_ids
+            )
+            best.sort(key=lambda match: (-match[1], match[0]))
+            del best[limit:]
+        return tuple(
+            (connection.execute("SELECT * FROM memories WHERE id = ?", (memory_id,)).fetchone(), score)
+            for memory_id, score in best
+        )
+
+    def has_current_vectors(self, connection: sqlite3.Connection) -> bool:
+        return bool(connection.execute("""SELECT EXISTS(SELECT 1 FROM search.memory_vectors AS v
+               JOIN search.indexed_memories AS i ON i.memory_id = v.memory_id
+               JOIN memories AS m ON m.id = i.memory_id AND m.updated_at = i.updated_at
+               WHERE m.deleted_at IS NULL)""").fetchone()[0])
+
     def spelling_options(self, connection: sqlite3.Connection, term: str) -> tuple[str, ...]:
         if len(term) < MIN_TYPO_WORD_LENGTH or not term.isalpha():
             return (term,)
         rows = connection.execute(
             """SELECT DISTINCT w.word FROM search.search_words AS w
                JOIN search.indexed_memories AS i ON i.memory_id = w.memory_id
+               JOIN search.memory_vectors AS v ON v.memory_id = i.memory_id
                JOIN memories AS m ON m.id = i.memory_id AND m.updated_at = i.updated_at
                WHERE w.word_length BETWEEN ? AND ? AND m.deleted_at IS NULL
                ORDER BY w.word""",

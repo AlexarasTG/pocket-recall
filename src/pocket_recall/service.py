@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Protocol
 
-from memory_manager.models import (
+from pocket_recall.models import (
     ArchivedMemoryEntry,
     MemoryPreSaveDraft,
     MemoryRecord,
@@ -96,6 +96,11 @@ class MemoryService(Protocol):
         stay the same for the same query and content. Only include the full body
         if it fits in the preview. Flag unfinished index updates separately, so
         missing matches are not mistaken for a complete search with no results.
+
+        Semantic search runs only when earlier methods return nothing, unless
+        fill_remaining_slots is configured. It then fills remaining slots without replacing
+        earlier matches or returning duplicate IDs. Semantic scores must meet the
+        configured similarity threshold. Model failures raise EmbeddingError.
         """
         ...
 

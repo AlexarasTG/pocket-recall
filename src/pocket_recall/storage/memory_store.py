@@ -7,20 +7,24 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from memory_manager.archived_memory_store import ArchivedMemoryStore, record_from_row
-from memory_manager.config import MemoryConfig
-from memory_manager.database import MemoryDatabase
-from memory_manager.errors import MemoryLookupError
-from memory_manager.index_synchronizer import IndexSynchronizer
-from memory_manager.models import (
+from pocket_recall.config import MemoryConfig
+from pocket_recall.embeddings.model_lifecycle_manager import ModelLifecycleManager
+from pocket_recall.errors import EmbeddingError, MemoryLookupError
+from pocket_recall.models import (
     ArchivedMemoryEntry,
     MemoryPreSaveDraft,
     MemoryRecord,
     SearchResults,
 )
-from memory_manager.search_coordinator import SearchCoordinator
-from memory_manager.search_store import SearchStore
-from memory_manager.validation import validate_draft
+from pocket_recall.retrieval.index_synchronizer import IndexSynchronizer
+from pocket_recall.retrieval.search_coordinator import SearchCoordinator
+from pocket_recall.storage.archived_memory_store import (
+    ArchivedMemoryStore,
+    record_from_row,
+)
+from pocket_recall.storage.database import MemoryDatabase
+from pocket_recall.storage.search_store import SearchStore
+from pocket_recall.validation import validate_draft
 
 logger = logging.getLogger(__name__)
 
@@ -34,12 +38,18 @@ class MemoryStore:
         self.config = config
         self.database = MemoryDatabase(config.memory_database)
         self.archive_store = ArchivedMemoryStore()
-        self.search_store = SearchStore(config.search_database)
-        self.index_synchronizer = IndexSynchronizer(self.database, self.search_store)
-        self.search_coordinator = SearchCoordinator(config)
+        self.model_lifecycle_manager = ModelLifecycleManager(config)
+        self.search_store = SearchStore(
+            config.search_database, self.model_lifecycle_manager.specification, self.model_lifecycle_manager.dimensions
+        )
+        self.index_synchronizer = IndexSynchronizer(self.database, self.search_store, self.model_lifecycle_manager)
+        self.search_coordinator = SearchCoordinator(
+            config, self.database, self.search_store, self.model_lifecycle_manager
+        )
 
     def initialize(self) -> None:
         self.database.initialize()
+        self.model_lifecycle_manager.prepare()
         self.index_synchronizer.initialize()
 
     def create(self, draft: MemoryPreSaveDraft) -> MemoryRecord:
@@ -147,7 +157,7 @@ class MemoryStore:
     def _synchronize_index(self, memory_id: str) -> None:
         try:
             self.index_synchronizer.synchronize(memory_id=memory_id)
-        except (OSError, sqlite3.Error, ValueError) as error:
+        except (OSError, sqlite3.Error, ValueError, EmbeddingError) as error:
             # Canonical content is already committed. Keep its pending request
             # rather than report that the approved save failed.
             logger.warning("Search index update pending: %s", error)

@@ -1,21 +1,27 @@
-# Memory Manager
+# Pocket Recall
 
 A general-purpose, local-first memory tool: explicit user-controlled writes,
 compact search results, and selective full-record recall. No dependency on an
 agent harness.
+
+The distribution is `pocket-recall`, the Python package is `pocket_recall`,
+and the terminal command is `memory`.
 
 ## Components
 
 - `models.py`: editable drafts, authoritative records, and compact candidates.
 - `config.py`: storage paths and limits; no implicit filesystem writes.
 - `service.py`: mutation, listing, recovery, search, and fetch contracts.
-- `memory_store.py`: record storage and pending search-index updates.
-- `archived_memory_store.py`: archived versions and recovery expiry dates.
-- `database.py`: database initialization and transactions.
-- `search_store.py`: SQLite search-index storage and queries that find matching records.
-- `index_synchronizer.py`: apply pending changes and rebuild derived search data.
-- `search_coordinator.py`: decides which matching method to try and builds short search results.
-- `search_text_processing.py`: query normalization, spelling checks, and excerpt selection.
+- `storage/memory_store.py`: record storage and pending search-index updates.
+- `storage/archived_memory_store.py`: archived versions and recovery expiry dates.
+- `storage/database.py`: database initialization and transactions.
+- `storage/search_store.py`: SQLite search-index storage and queries that find matching records.
+- `retrieval/index_synchronizer.py`: apply pending changes and rebuild derived search data.
+- `retrieval/search_coordinator.py`: decides which matching method to try and builds short search results.
+- `retrieval/search_text_processing.py`: query normalization, spelling checks, and excerpt selection.
+- `embeddings/embedding_provider.py`: local model loading, input checks, and normalized vectors.
+- `embeddings/model_lifecycle_manager.py`: lazy model loading, shared use within the core, and idle unloading.
+- `embeddings/model_specification.py`: model name, repository, pinned revision, dimensions, token limit, and query instruction.
 - `validation.py`: body-length and obvious-secret checks.
 - `cli.py`: terminal commands, previews, and confirmation.
 
@@ -23,14 +29,19 @@ Data-directory and workspace paths are explicit configuration. No developer
 home directory or company workspace is built into the package. Empty workspace
 allowlists disable automatic client activation.
 
+Model-specific facts stay together in `embeddings/model_specification.py`;
+adjustable settings such as thresholds, thread counts, and timeouts live in `config.py`.
+
 ## Terminal usage
 
-Requires Python 3.11 or newer with SQLite FTS5 support. The CLI uses only the standard library.
-Run from the project directory without installing dependencies:
+Requires Python 3.11 or newer with SQLite FTS5 support and the package dependencies.
+Install in a virtual environment from the project directory:
 
 ```sh
-PYTHONPATH=src python3 -m memory_manager --data-dir /path/to/private/library maintenance init
-PYTHONPATH=src python3 -m memory_manager --data-dir /path/to/private/library save \
+python3 -m venv .venv
+.venv/bin/python -m pip install -e .
+.venv/bin/memory --data-dir /path/to/private/library maintenance init
+.venv/bin/memory --data-dir /path/to/private/library save \
   --title "Example concept" --body "A short explanation." --alias "EC"
 ```
 
@@ -38,6 +49,24 @@ Installing the package also provides the `memory` command. Every command takes
 `--data-dir` before the command name. `maintenance init` is explicit and safe to
 repeat; `maintenance reindex` can recreate a missing search index. Other commands
 do not create missing databases.
+
+For development, include the formatting tools:
+
+```sh
+.venv/bin/python -m pip install -e ".[dev]"
+```
+
+The editable install uses the code in `src/` directly; source edits do not need
+another install. In Zed, use `toolchain: select` and choose this project's
+`.venv/bin/python` so import checking uses the installed dependencies.
+
+Initialization downloads the pinned FastEmbed model into the library's `models/`
+directory if needed. Subsequent embedding and search use local files only. No
+memory text is sent to an external service. ONNX Runtime and Hugging Face telemetry
+are disabled before this tool imports them. Hosts that import those libraries
+earlier should set `ORT_DISABLE_TELEMETRY=1` and `HF_HUB_DISABLE_TELEMETRY=1` before
+starting Python.
+The early opt-out follows [ONNX Runtime's privacy guidance](https://github.com/microsoft/onnxruntime/blob/main/docs/Privacy.md).
 
 Everyday commands:
 
@@ -89,7 +118,10 @@ writes; it cannot be restored through the application.
 
 Saving a memory and marking its search-index update as pending is one database
 transaction. Indexing is attempted immediately afterward. A failed index update
-does not undo the save; its pending request remains durable. `maintenance status` reports
+does not undo the save; its pending request remains durable. Keyword and vector
+changes commit together. A failed embedding leaves the new version readable by
+ID but not searchable until indexing succeeds; outdated indexed versions are excluded.
+`maintenance status` reports
 whether the index is up to date, checking both queued updates and missing or stale
 indexed records. `maintenance reindex` rebuilds the disposable
 index from current active records without changing their content or timestamps.
@@ -102,6 +134,24 @@ stemming. Titles and aliases have equal ranking weight above body text. Ties
 use memory ID, so ordering is repeatable. Scores rank within a tier, not factual
 confidence, and should not be compared between different queries.
 
+By default, semantic search runs only when exact, keyword, and typo searches
+return nothing. It compares one vector per memory, built from its title, aliases,
+and body. IDs and dates are excluded. The default cosine-similarity cutoff is
+0.85; this is a provisional relevance filter, not an 85% confidence estimate.
+Semantic excerpts use the opening of the body.
+
+To experiment without changing saved data or rebuilding the index:
+
+```sh
+memory --data-dir /path/to/private/library search "recording interval" \
+  --semantic-policy fill_remaining_slots --similarity-threshold 0.85
+```
+
+`fill_remaining_slots` keeps the existing exact/keyword/typo candidates first, then appends
+qualifying semantic matches with different IDs, up to the same five-result cap.
+The default policy is `on_zero_results`. Both settings are also available through
+`MemoryConfig`. A model failure is reported as an error, not an empty semantic search.
+
 If keyword search finds nothing, spelling fallback allows one inserted, removed,
 replaced, or adjacent-swapped character per alphabetic word of at least five
 characters. Both spellings must meet that minimum; short acronyms and numeric
@@ -112,12 +162,36 @@ belong in aliases. Punctuation separates keyword terms; quotes and words such as
 characters and 32 distinct words.
 
 Search returns JSON with `candidates` and `index_update_pending`, not full records.
-Up to five candidates include a match kind (`exact`, `lexical`, or `typo`), score,
+Up to five candidates include a match kind (`exact`, `lexical`, `typo`, or `semantic`), score,
 and an excerpt of at most 160 characters including ellipses. Excerpts surround
 the first body match, or use the opening when only a title/alias matched. Use
 `read ID` to fetch a selected record. Pending indexing produces an incomplete-results
 warning; unreadable indexes produce errors rather than empty matches. Results
 exclude deleted records and indexed versions that no longer match canonical storage.
+
+## Local embeddings
+
+FastEmbed runs `BAAI/bge-small-en-v1.5` on CPU, with two inference threads by
+default (`embedding_threads`). Each normalized vector contains 384 float32 values.
+Vectors stay in SQLite; NumPy compares current vectors in bounded batches, with
+no separate vector database or SQLite extension required.
+
+Index metadata records the provider/runtime versions, model revision, dimensions,
+and text/vector format. Incompatible metadata requires `maintenance reindex`;
+`maintenance init` can upgrade the older keyword-only index and rebuild it.
+Rebuilds leave memory content, timestamps, and archived versions unchanged.
+
+The model accepts at most 512 tokens per embedding input, including the title
+and aliases or the query's retrieval instruction. Inputs exceeding that limit
+raise an embedding error instead of silently truncating text. This does not
+change the 1,000-character storage limit; an approved memory remains saved with
+indexing pending if its combined input cannot be embedded.
+
+One `MemoryStore` shares one lazy model between indexing and search. It unloads
+after 60 minutes without model use (`model_idle_timeout_minutes`), using an idle
+timer rather than polling. Direct reads, status, and successful lexical searches
+do not load it. CLI processes release it on exit; separate CLI processes do not
+share a model instance.
 
 New database directories are created with owner-only access where supported,
 and database files with owner read/write access. Existing directory permissions

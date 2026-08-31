@@ -5,8 +5,8 @@ import sqlite3
 from datetime import datetime, timedelta
 from uuid import uuid4
 
-from memory_manager.errors import MemoryLookupError
-from memory_manager.models import ArchivedMemoryEntry, MemoryRecord
+from pocket_recall.errors import MemoryLookupError
+from pocket_recall.models import ArchivedMemoryEntry, MemoryRecord
 
 
 def record_from_row(row: sqlite3.Row) -> MemoryRecord:

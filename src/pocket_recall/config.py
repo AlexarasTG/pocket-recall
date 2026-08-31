@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from math import isfinite
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -26,6 +26,9 @@ class MemoryConfig:
     title_alias_search_weight: float = 5.0
     body_search_weight: float = 1.0
     typo_matching_enabled: bool = True
+    semantic_fallback_policy: Literal["on_zero_results", "fill_remaining_slots"] = "on_zero_results"
+    semantic_similarity_threshold: float = 0.85
+    embedding_threads: int = 2
     recovery_retention_days: int = 60
     audit_retention_days: int = 30
     audit_max_bytes: int = 100_000_000
@@ -46,6 +49,7 @@ class MemoryConfig:
             "audit_max_bytes",
             "daily_snapshots_to_keep",
             "model_idle_timeout_minutes",
+            "embedding_threads",
         )
         for name in positive_limits:
             if getattr(self, name) <= 0:
@@ -54,6 +58,14 @@ class MemoryConfig:
             value = getattr(self, name)
             if not isfinite(value) or value <= 0:
                 raise ValueError(f"{name} must be finite and positive")
+        if self.semantic_fallback_policy not in ("on_zero_results", "fill_remaining_slots"):
+            raise ValueError("Semantic fallback policy must be on_zero_results or fill_remaining_slots")
+        if not isfinite(self.semantic_similarity_threshold) or not -1 <= self.semantic_similarity_threshold <= 1:
+            raise ValueError("Semantic similarity threshold must be between -1 and 1")
+
+    @property
+    def model_directory(self) -> Path:
+        return self.data_directory / "models"
 
     @property
     def memory_database(self) -> Path:

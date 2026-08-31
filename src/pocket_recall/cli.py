@@ -7,11 +7,11 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 
-from memory_manager.config import MemoryConfig
-from memory_manager.errors import MemoryLookupError
-from memory_manager.memory_store import ConcurrentUpdateError, MemoryStore
-from memory_manager.models import MemoryPreSaveDraft, MemoryRecord
-from memory_manager.validation import validate_draft
+from pocket_recall.config import MemoryConfig
+from pocket_recall.errors import EmbeddingError, MemoryLookupError
+from pocket_recall.models import MemoryPreSaveDraft, MemoryRecord
+from pocket_recall.storage.memory_store import ConcurrentUpdateError, MemoryStore
+from pocket_recall.validation import validate_draft
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -36,6 +36,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     search = commands.add_parser("search", help="Find compact memory candidates")
     search.add_argument("query", help="Focused words or a title/alias; quote multiword queries")
+    search.add_argument(
+        "--semantic-policy",
+        choices=("on_zero_results", "fill_remaining_slots"),
+        help="When to try semantic search (default: on_zero_results)",
+    )
+    search.add_argument("--similarity-threshold", type=float, help="Minimum semantic similarity (default: 0.85)")
 
     delete = commands.add_parser("delete", help="Preview and soft-delete a memory")
     delete.add_argument("id")
@@ -254,9 +260,19 @@ class MemoryCLI:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        config = MemoryConfig(data_directory=args.data_dir.expanduser().resolve())
-        MemoryCLI(MemoryStore(config)).run(args)
-    except (ValueError, MemoryLookupError, ConcurrentUpdateError, OSError, sqlite3.Error) as error:
+        search_options = {}
+        if args.command == "search":
+            if args.semantic_policy is not None:
+                search_options["semantic_fallback_policy"] = args.semantic_policy
+            if args.similarity_threshold is not None:
+                search_options["semantic_similarity_threshold"] = args.similarity_threshold
+        config = MemoryConfig(data_directory=args.data_dir.expanduser().resolve(), **search_options)
+        store = MemoryStore(config)
+        try:
+            MemoryCLI(store).run(args)
+        finally:
+            store.model_lifecycle_manager.close()
+    except (ValueError, MemoryLookupError, ConcurrentUpdateError, EmbeddingError, OSError, sqlite3.Error) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:

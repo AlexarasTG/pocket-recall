@@ -15,7 +15,7 @@ class MemoryService(Protocol):
     and limits before saving.
 
     Normal reads show only current, non-deleted memories, even if the search
-    index is out of date. Missing or inactive memories raise LookupError;
+    index is out of date. Missing or inactive memories raise MemoryLookupError;
     invalid content or arguments raise ValueError. Database or index errors
     must be reported, not treated as searches with no matches.
 

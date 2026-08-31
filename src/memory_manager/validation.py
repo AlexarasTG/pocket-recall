@@ -13,7 +13,6 @@ SECRET_PATTERNS = (
     re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b"),
     re.compile(r"\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b"),
     re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"),
-    re.compile(r"\b(?:Bearer|Basic)\s+[A-Za-z0-9+/_.=-]{8,}", re.IGNORECASE),
     re.compile(
         r"\b(?:password|passwd|api[_ -]?key|access[_ -]?token|refresh[_ -]?token|"
         r"client[_ -]?secret|secret[_ -]?key)\b[\"']?\s*[:=]\s*[\"']?\S+",
@@ -21,6 +20,8 @@ SECRET_PATTERNS = (
     ),
     re.compile(r"\b[a-z][a-z0-9+.-]*://[^\s/:]+:[^\s/@]+@", re.IGNORECASE),
 )
+
+AUTHORIZATION_PATTERN = re.compile(r"\b(?:Bearer|Basic)\s+([A-Za-z0-9+/_.=-]{8,})", re.IGNORECASE)
 
 
 def validate_draft(draft: MemoryPreSaveDraft) -> None:
@@ -34,7 +35,12 @@ def validate_draft(draft: MemoryPreSaveDraft) -> None:
         raise ValueError(f"Body has {len(draft.body)} characters; the limit is {limit}")
 
     text = "\n".join(fields)
-    if any(pattern.search(text) for pattern in SECRET_PATTERNS):
+    # Ignore ordinary words after Bearer/Basic, including a sentence-ending period.
+    authorization_token_found = any(
+        not match.group(1).rstrip(".").isalpha()
+        for match in AUTHORIZATION_PATTERN.finditer(text)
+    )
+    if authorization_token_found or any(pattern.search(text) for pattern in SECRET_PATTERNS):
         raise ValueError("Possible credential or private key detected; remove it before saving")
 
     try:

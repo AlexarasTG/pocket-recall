@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from memory_manager.config import MemoryConfig
 from memory_manager.database import MemoryDatabase
+from memory_manager.errors import MemoryLookupError
 from memory_manager.index_synchronizer import IndexSynchronizer
 from memory_manager.models import MemoryPreSaveDraft, MemoryRecord, ArchivedMemoryEntry, SearchResults
 from memory_manager.archived_memory_store import ArchivedMemoryStore, record_from_row
@@ -58,7 +59,7 @@ class MemoryStore:
         with self.database.write() as connection:
             current = self._get_record(connection, memory_id)
             if current.deleted_at is not None:
-                raise LookupError("Memory is deleted; restore it before editing")
+                raise MemoryLookupError("Memory is deleted; restore it before editing")
             self._check_version(current, expected_updated_at)
             record = replace(
                 current, title=draft.title, body=draft.body, aliases=draft.aliases,
@@ -74,7 +75,7 @@ class MemoryStore:
         with self.database.write() as connection:
             current = self._get_record(connection, memory_id)
             if current.deleted_at is not None:
-                raise LookupError("Memory is already deleted")
+                raise MemoryLookupError("Memory is already deleted")
             self._check_version(current, expected_updated_at)
             now = self._next_timestamp(current)
             self._replace(connection, current, replace(current, updated_at=now, deleted_at=now))
@@ -127,14 +128,14 @@ class MemoryStore:
         with self.database.read() as connection:
             record = self._get_record(connection, memory_id)
             if record.deleted_at is not None:
-                raise LookupError("Memory is deleted; use the recovery commands")
+                raise MemoryLookupError("Memory is deleted; use the recovery commands")
             return record
 
     def fetch_deleted(self, memory_id: str) -> MemoryRecord:
         with self.database.read() as connection:
             record = self._get_record(connection, memory_id)
             if record.deleted_at is None:
-                raise LookupError("Memory is not deleted")
+                raise MemoryLookupError("Memory is not deleted")
             return record
 
     def list_records(self, *, limit: int = 50, offset: int = 0) -> tuple[MemoryRecord, ...]:
@@ -171,18 +172,14 @@ class MemoryStore:
             self._get_record(connection, memory_id)
             return self.archive_store.fetch(connection, memory_id, revision_id, datetime.now(timezone.utc))
 
-    def pending_index_update_count(self) -> int:
-        with self.database.read() as connection:
-            return connection.execute("SELECT count(*) FROM pending_index_updates").fetchone()[0]
-
     def _get_record(self, connection: sqlite3.Connection, memory_id: str) -> MemoryRecord:
         row = connection.execute("SELECT * FROM memories WHERE id = ?", (memory_id,)).fetchone()
         if row is None:
-            raise LookupError("Memory not found")
+            raise MemoryLookupError("Memory not found")
         record = record_from_row(row)
         cutoff = datetime.now(timezone.utc) - timedelta(days=self.config.recovery_retention_days)
         if record.deleted_at is not None and record.deleted_at <= cutoff:
-            raise LookupError("The memory's recovery window has expired")
+            raise MemoryLookupError("The memory's recovery window has expired")
         return record
 
     def _replace(

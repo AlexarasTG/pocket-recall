@@ -77,7 +77,9 @@ is never truncated. Validation rejects recognizable credential formats and
 whole JSON objects/arrays as raw payloads. This is a conservative check, not a
 guarantee that every secret or production payload can be identified. Store
 curated explanations, not credentials or raw logs. Detection may also reject
-examples that look like credential assignments.
+examples that look like credential assignments. The Bearer/Basic check ignores
+alphabetic-only values so ordinary authentication descriptions are accepted;
+alphabetic-only credentials can therefore pass this check too.
 
 Deleted records and older versions are recoverable for 60 days. `read ID --history` shows
 revision IDs and expiry dates. Restoration preserves the memory ID and creation
@@ -88,7 +90,8 @@ writes; it cannot be restored through the application.
 Saving a memory and marking its search-index update as pending is one database
 transaction. Indexing is attempted immediately afterward. A failed index update
 does not undo the save; its pending request remains durable. `maintenance status` reports
-pending requests and checks index completeness. `maintenance reindex` rebuilds the disposable
+whether the index is up to date, checking both queued updates and missing or stale
+indexed records. `maintenance reindex` rebuilds the disposable
 index from current active records without changing their content or timestamps.
 The `read` command reads saved records, not the search index.
 

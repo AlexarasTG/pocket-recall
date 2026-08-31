@@ -5,6 +5,7 @@ import json
 import sqlite3
 from uuid import uuid4
 
+from memory_manager.errors import MemoryLookupError
 from memory_manager.models import MemoryRecord, ArchivedMemoryEntry
 
 
@@ -72,5 +73,5 @@ class ArchivedMemoryStore:
             (revision_id, memory_id, now.isoformat()),
         ).fetchone()
         if row is None:
-            raise LookupError("Revision not found or its recovery window has expired")
+            raise MemoryLookupError("Revision not found or its recovery window has expired")
         return archived_entry_from_row(row)

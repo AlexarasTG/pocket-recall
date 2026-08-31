@@ -8,6 +8,7 @@ import sqlite3
 import sys
 
 from memory_manager.config import MemoryConfig
+from memory_manager.errors import MemoryLookupError
 from memory_manager.memory_store import ConcurrentUpdateError, MemoryStore
 from memory_manager.models import MemoryPreSaveDraft, MemoryRecord
 from memory_manager.validation import validate_draft
@@ -46,7 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
     maintenance = commands.add_parser("maintenance", help="Initialize, inspect, or rebuild local storage")
     actions = maintenance.add_subparsers(dest="maintenance_command", required=True)
     actions.add_parser("init", help="Initialize local storage and its search index")
-    actions.add_parser("status", help="Count saved changes awaiting a search index update")
+    actions.add_parser("status", help="Check whether the search index is up to date")
     actions.add_parser("reindex", help="Rebuild search data from saved memories without changing them")
     return parser
 
@@ -153,9 +154,6 @@ class MemoryCLI:
         if args.maintenance_command == "init":
             self.store.initialize()
             print(f"Memory database ready: {self.store.config.memory_database}")
-        elif args.maintenance_command == "status":
-            count = self.store.pending_index_update_count()
-            print(f"Pending search index updates: {count}")
         elif args.maintenance_command == "reindex":
             self.store.reindex()
         self.print_index_status()
@@ -208,7 +206,7 @@ class MemoryCLI:
     def restore(self, args: argparse.Namespace) -> None:
         try:
             current = self.store.fetch(args.id)
-        except LookupError:
+        except MemoryLookupError:
             current = self.store.fetch_deleted(args.id)
         if args.revision is not None:
             content = self.store.fetch_revision(args.id, args.revision).record
@@ -251,7 +249,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         config = MemoryConfig(data_directory=args.data_dir.expanduser().resolve())
         MemoryCLI(MemoryStore(config)).run(args)
-    except (ValueError, LookupError, ConcurrentUpdateError, OSError, sqlite3.Error) as error:
+    except (ValueError, MemoryLookupError, ConcurrentUpdateError, OSError, sqlite3.Error) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:

@@ -1,16 +1,18 @@
-"""Explicit local configuration; constructing it creates no files or processes."""
+"""Settings for paths, search, and storage. Creating these settings starts nothing and creates no files."""
 
 from dataclasses import dataclass
 from pathlib import Path
+from math import isfinite
 from typing import ClassVar
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class MemoryConfig:
-    """Workspace roots control client activation, never search ranking.
+    """Settings used by the memory tool and the apps that connect to it.
 
-    Clients treat an empty allowlist as disabled. Callers must supply absolute
-    paths with home-directory shortcuts already expanded.
+    Workspace roots tell apps where to enable automatic memory use. An empty
+    list disables it. These paths do not affect which search results rank higher.
+    Use full filesystem paths, with shortcuts such as ~ already expanded.
     """
 
     RECORD_BODY_CHARACTER_LIMIT: ClassVar[int] = 1_000
@@ -21,6 +23,9 @@ class MemoryConfig:
     max_candidates_per_search: int = 5
     max_fetch_records_per_subproblem: int = 3
     max_searches_per_subproblem: int = 3
+    title_alias_search_weight: float = 5.0
+    body_search_weight: float = 1.0
+    typo_matching_enabled: bool = True
     recovery_retention_days: int = 60
     audit_retention_days: int = 30
     audit_max_bytes: int = 100_000_000
@@ -45,6 +50,10 @@ class MemoryConfig:
         for name in positive_limits:
             if getattr(self, name) <= 0:
                 raise ValueError(f"{name} must be positive")
+        for name in ("title_alias_search_weight", "body_search_weight"):
+            value = getattr(self, name)
+            if not isfinite(value) or value <= 0:
+                raise ValueError(f"{name} must be finite and positive")
 
     @property
     def memory_database(self) -> Path:

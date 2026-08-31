@@ -11,7 +11,7 @@ dist/
 # Jetbrains
 .idea/
 
-# MacOS stuff
+# MacOS
 .DS_Store
 
 # Local knowledge and telemetry.

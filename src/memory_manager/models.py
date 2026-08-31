@@ -1,4 +1,4 @@
-"""Transport-independent values shared by the core and its clients."""
+"""Data structures for memories, archived versions, and search results."""
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -7,7 +7,7 @@ from typing import Literal
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class MemoryPreSaveDraft:
-    """User-editable content, not yet validated or persisted."""
+    """A proposed memory that can still be edited. It has not been checked or saved."""
 
     title: str
     body: str
@@ -16,7 +16,7 @@ class MemoryPreSaveDraft:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class MemoryRecord:
-    """Canonical record. Persisted timestamps are timezone-aware UTC."""
+    """A memory's saved content and dates. Dates include the UTC time zone."""
 
     id: str
     title: str
@@ -29,7 +29,7 @@ class MemoryRecord:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ArchivedMemoryEntry:
-    """An archived version that can be restored before its expiry date."""
+    """An older memory version kept for recovery until its expiry date."""
 
     id: str
     record: MemoryRecord
@@ -39,12 +39,20 @@ class ArchivedMemoryEntry:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class SearchCandidate:
-    """Compact recall result; scores rank within a tier, not factual truth."""
+    """A short search result. Scores compare matches of the same kind, not whether the content is true."""
 
     id: str
     title: str
     aliases: tuple[str, ...]
     updated_at: datetime
-    match_kind: Literal["exact", "lexical", "semantic"]
+    match_kind: Literal["exact", "lexical", "typo", "semantic"]
     score: float
     excerpt: str = ""
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SearchResults:
+    """Search results, plus a flag for index updates that may leave some matches missing."""
+
+    candidates: tuple[SearchCandidate, ...]
+    index_update_pending: bool

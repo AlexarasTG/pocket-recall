@@ -1,4 +1,4 @@
-"""Human-facing commands with approval before changing memory content."""
+"""Terminal commands that ask for approval before changing saved memories."""
 
 import argparse
 from dataclasses import asdict
@@ -17,8 +17,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="memory", description="Manage your local memory library")
     parser.add_argument("--data-dir", type=Path, required=True, help="Directory containing memory.sqlite")
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("init", help="Initialize the local database")
+    commands.add_parser("init", help="Initialize local storage and its search index")
     commands.add_parser("status", help="Count saved changes awaiting a search index update")
+    search = commands.add_parser("search", help="Find compact memory candidates")
+    search.add_argument("query", help="Focused words or a title/alias; quote multiword queries")
+    commands.add_parser("reindex", help="Rebuild search data from saved memories without changing them")
 
     create = commands.add_parser("create", help="Preview and save a memory")
     create.add_argument("--title", required=True)
@@ -97,7 +100,6 @@ def confirm() -> bool:
 def print_saved(record: MemoryRecord) -> None:
     print("Memory saved")
     print(f"ID: {record.id}")
-    print("Search index update pending")
 
 
 class MemoryCLI:
@@ -108,9 +110,19 @@ class MemoryCLI:
         if args.command == "init":
             self.store.initialize()
             print(f"Memory database ready: {self.store.config.memory_database}")
+            self.print_index_status()
         elif args.command == "status":
             count = self.store.pending_index_update_count()
             print(f"Pending search index updates: {count}")
+            self.print_index_status()
+        elif args.command == "search":
+            results = self.store.search(args.query)
+            print_json(asdict(results))
+            if results.index_update_pending:
+                print("Index update pending; results may be incomplete", file=sys.stderr)
+        elif args.command == "reindex":
+            self.store.reindex()
+            self.print_index_status()
         elif args.command == "create":
             self.create(args)
         elif args.command == "update":
@@ -134,6 +146,7 @@ class MemoryCLI:
         preview_draft(draft)
         if confirm():
             print_saved(self.store.create(draft))
+            self.print_index_status()
 
     def update(self, args: argparse.Namespace) -> None:
         current = self.store.fetch(args.id)
@@ -156,6 +169,7 @@ class MemoryCLI:
         preview_draft(draft)
         if confirm():
             print_saved(self.store.update(args.id, draft, expected_updated_at=current.updated_at))
+            self.print_index_status()
 
     def delete(self, memory_id: str) -> None:
         current = self.store.fetch(memory_id)
@@ -165,7 +179,7 @@ class MemoryCLI:
         if confirm():
             self.store.delete(memory_id, expected_updated_at=current.updated_at)
             print("Memory deleted")
-            print("Search index update pending")
+            self.print_index_status()
 
     def restore(self, args: argparse.Namespace) -> None:
         try:
@@ -188,6 +202,16 @@ class MemoryCLI:
             print_saved(self.store.restore(
                 args.id, revision_id=args.revision, expected_updated_at=current.updated_at,
             ))
+            self.print_index_status()
+
+    def print_index_status(self) -> None:
+        try:
+            pending = self.store.index_update_pending()
+        except (OSError, sqlite3.Error, ValueError) as error:
+            print("Search index update pending")
+            print(f"Index status unavailable: {error}", file=sys.stderr)
+        else:
+            print("Search index update pending" if pending else "Search index is up to date")
 
     def show(self, args: argparse.Namespace) -> None:
         if args.revision is not None:

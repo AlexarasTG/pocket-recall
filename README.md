@@ -10,8 +10,12 @@ agent harness.
 - `config.py`: storage paths and limits; no implicit filesystem writes.
 - `service.py`: mutation, listing, recovery, search, and fetch contracts.
 - `memory_store.py`: record storage and pending search-index updates.
-- `memory_archive_store.py`: archived versions and recovery expiry dates.
+- `archived_memory_store.py`: archived versions and recovery expiry dates.
 - `database.py`: database initialization and transactions.
+- `search_store.py`: SQLite search-index storage and queries that find matching records.
+- `index_synchronizer.py`: apply pending changes and rebuild derived search data.
+- `search_coordinator.py`: decides which matching method to try and builds short search results.
+- `search_text_processing.py`: query normalization, spelling checks, and excerpt selection.
 - `validation.py`: body-length and obvious-secret checks.
 - `cli.py`: terminal commands, previews, and confirmation.
 
@@ -21,7 +25,7 @@ allowlists disable automatic client activation.
 
 ## Terminal usage
 
-Requires Python 3.11 or newer. The CLI uses only the standard library.
+Requires Python 3.11 or newer with SQLite FTS5 support. The CLI uses only the standard library.
 Run from the project directory without installing dependencies:
 
 ```sh
@@ -32,7 +36,7 @@ PYTHONPATH=src python3 -m memory_manager --data-dir /path/to/private/library cre
 
 Installing the package also provides the `memory` command. Every command takes
 `--data-dir` before the command name. `init` is explicit and safe to repeat;
-other commands do not create missing databases.
+`reindex` can recreate a missing search index; other commands do not create missing databases.
 
 Commands:
 
@@ -43,6 +47,8 @@ Commands:
 - `delete ID`
 - `history ID [--limit NUMBER] [--offset NUMBER]`
 - `restore ID [--revision REVISION_ID]`
+- `search "FOCUSED QUERY"`
+- `reindex`
 - `status`
 
 Use `--body-file PATH` instead of `--body` to read UTF-8 text. Creating, updating,
@@ -65,9 +71,35 @@ recovery data is hidden immediately and removed during subsequent approved
 writes; it cannot be restored through the application.
 
 Saving a memory and marking its search-index update as pending is one database
-transaction. The CLI reports these states separately. `status` counts pending
-updates; a count of zero alone does not prove a search index exists. Direct
-`show` and `list` read saved records, not the search index.
+transaction. Indexing is attempted immediately afterward. A failed index update
+does not undo the save; its pending request remains durable. `status` reports
+pending requests and checks index completeness. `reindex` rebuilds the disposable
+index from current active records without changing their content or timestamps.
+Direct `show` and `list` read saved records, not the search index.
+
+Search tries whole title/alias matches first, ignoring case and extra whitespace.
+If any exist, only that tier is returned. Otherwise, all query words must match
+across the title, aliases, or body, allowing English word variations through
+stemming. Titles and aliases have equal ranking weight above body text. Ties
+use memory ID, so ordering is repeatable. Scores rank within a tier, not factual
+confidence, and should not be compared between different queries.
+
+If keyword search finds nothing, spelling fallback allows one inserted, removed,
+replaced, or adjacent-swapped character per alphabetic word of at least five
+characters. Both spellings must meet that minimum; short acronyms and numeric
+identifiers remain strict. At most eight alternatives per word are considered,
+in alphabetical order. Prefix expansion is disabled; intentional abbreviations
+belong in aliases. Punctuation separates keyword terms; quotes and words such as
+`OR` are literal input, not a query language. Queries are limited to 1,000
+characters and 32 distinct words.
+
+Search returns JSON with `candidates` and `index_update_pending`, not full records.
+Up to five candidates include a match kind (`exact`, `lexical`, or `typo`), score,
+and an excerpt of at most 160 characters including ellipses. Excerpts surround
+the first body match, or use the opening when only a title/alias matched. Use
+`show ID` to fetch a selected record. Pending indexing produces an incomplete-results
+warning; unreadable indexes produce errors rather than empty matches. Results
+exclude deleted records and indexed versions that no longer match canonical storage.
 
 New database directories are created with owner-only access where supported,
 and database files with owner read/write access. Existing directory permissions

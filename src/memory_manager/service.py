@@ -1,86 +1,90 @@
-"""Public core operations, independent of persistence and transport."""
+"""Define how apps and coding agents can manage and search memories."""
 
 from datetime import datetime
 from typing import Protocol
 
-from memory_manager.models import MemoryPreSaveDraft, MemoryRecord, ArchivedMemoryEntry, SearchCandidate
+from memory_manager.models import MemoryPreSaveDraft, MemoryRecord, ArchivedMemoryEntry, SearchResults
 
 
 class MemoryService(Protocol):
-    """Core operations, independent of agent sessions and UI types.
+    """Operations the memory tool provides, regardless of which app uses it.
 
-    Trusted callers obtain explicit user approval before mutations; an agent
-    must not receive an unrestricted write tool. The concrete core validates
-    content and limits before persistence. Draft construction is not approval.
+    The calling app must get user approval before saving, editing, deleting, or
+    restoring a memory. Creating a draft does not count as approval. Agents must
+    not get a write tool that skips this check. The implementation checks content
+    and limits before saving.
 
-    Normal reads expose only active canonical versions, even if a derived
-    index is stale. Missing/inactive IDs raise LookupError; invalid content or
-    arguments raise ValueError. Storage/index failures must not be hidden as
-    empty search results.
+    Normal reads show only current, non-deleted memories, even if the search
+    index is out of date. Missing or inactive memories raise LookupError;
+    invalid content or arguments raise ValueError. Database or index errors
+    must be reported, not treated as searches with no matches.
 
-    Pass the previewed record's updated_at to mutations so another session's
-    edits cannot be overwritten by an approval based on older content.
+    When changing a memory, pass the preview's updated_at as expected_updated_at.
+    This prevents overwriting changes made by another session after the preview.
     """
 
     def create(self, draft: MemoryPreSaveDraft) -> MemoryRecord:
-        """Persist approved content; created_at and updated_at initially match."""
+        """Save an approved memory. Set created_at and updated_at to the same time."""
         ...
 
     def update(
         self, memory_id: str, draft: MemoryPreSaveDraft,
         *, expected_updated_at: datetime | None = None,
     ) -> MemoryRecord:
-        """Replace approved content, retain the old revision, refresh updated_at."""
+        """Save approved changes, keep the previous version, and set updated_at to the edit time."""
         ...
 
     def delete(
         self, memory_id: str, *, expected_updated_at: datetime | None = None,
     ) -> None:
-        """Soft-delete an active record and exclude it from recall immediately."""
+        """Remove a memory from normal reads and searches, but keep it available for recovery."""
         ...
 
     def restore(
         self, memory_id: str, *, revision_id: str | None = None,
         expected_updated_at: datetime | None = None,
     ) -> MemoryRecord:
-        """Restore deleted or historical content and request an index update."""
+        """Bring back a deleted memory or an older version, and request a search-index update."""
         ...
 
     def history(
         self, memory_id: str, *, limit: int = 50, offset: int = 0,
     ) -> tuple[ArchivedMemoryEntry, ...]:
-        """List recoverable versions, newest replacement first."""
+        """List older versions that can still be restored, most recently archived first."""
         ...
 
     def fetch_revision(self, memory_id: str, revision_id: str) -> ArchivedMemoryEntry:
-        """Read one retained version for an explicit recovery preview."""
+        """Read one archived version so the user can preview it before restoring."""
         ...
 
     def fetch_deleted(self, memory_id: str) -> MemoryRecord:
-        """Read a deleted record within its recovery window; not for recall."""
+        """Read a deleted memory before its recovery deadline, not for normal agent recall."""
         ...
 
     def list_records(
         self, *, limit: int = 50, offset: int = 0
     ) -> tuple[MemoryRecord, ...]:
-        """List active records for human inspection, ordered by ID ascending."""
+        """List non-deleted memories for the user to inspect, sorted by ID from lowest to highest."""
         ...
 
     def list_deleted(
         self, *, limit: int = 50, offset: int = 0
     ) -> tuple[MemoryRecord, ...]:
-        """Explicit recovery-only listing, ordered by ID ascending; not recall."""
+        """List deleted memories for recovery, not agent recall. Sort IDs from lowest to highest."""
         ...
 
-    def search(self, query: str) -> tuple[SearchCandidate, ...]:
-        """Return capped candidates through exact, lexical, then vector fallback.
+    def search(self, query: str) -> SearchResults:
+        """Return a limited number of short search results, trying the strongest matches first.
 
-        Excerpts are deterministic and at most 160 characters. No match returns
-        an empty tuple. Full bodies are not returned except when they fit in
-        the excerpt. Candidate count is bounded by configuration.
+        Try exact titles and aliases, then words and typos, then meaning-based
+        matching. Return no candidates if nothing matches. Settings limit how
+        many results are returned. Body previews are at most 160 characters and
+        stay the same for the same query and content. Only include the full body
+        if it fits in the preview. Flag unfinished index updates separately, so
+        missing matches are not mistaken for a complete search with no results.
         """
         ...
 
     def fetch(self, memory_id: str) -> MemoryRecord:
-        """Read one selected active record; CLI show uses this same operation."""
+        """Read one selected, non-deleted memory in full. The CLI show command uses this too."""
         ...

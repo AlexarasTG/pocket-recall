@@ -1,30 +1,41 @@
-"""Save records, their history, and pending index updates together."""
+"""Save memories, keep older versions for recovery, and update the search index."""
 
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import json
+import logging
 import sqlite3
 from uuid import uuid4
 
 from memory_manager.config import MemoryConfig
 from memory_manager.database import MemoryDatabase
-from memory_manager.models import MemoryPreSaveDraft, MemoryRecord, ArchivedMemoryEntry
-from memory_manager.memory_archive_store import MemoryArchiveStore, record_from_row
+from memory_manager.index_synchronizer import IndexSynchronizer
+from memory_manager.models import MemoryPreSaveDraft, MemoryRecord, ArchivedMemoryEntry, SearchResults
+from memory_manager.archived_memory_store import ArchivedMemoryStore, record_from_row
+from memory_manager.search_coordinator import SearchCoordinator
+from memory_manager.search_store import SearchStore
 from memory_manager.validation import validate_draft
 
 
+logger = logging.getLogger(__name__)
+
+
 class ConcurrentUpdateError(RuntimeError):
-    """The record changed after the caller read it for approval."""
+    """The memory changed after it was shown for approval."""
 
 
 class MemoryStore:
     def __init__(self, config: MemoryConfig) -> None:
         self.config = config
         self.database = MemoryDatabase(config.memory_database)
-        self.archive_store = MemoryArchiveStore()
+        self.archive_store = ArchivedMemoryStore()
+        self.search_store = SearchStore(config.search_database)
+        self.index_synchronizer = IndexSynchronizer(self.database, self.search_store)
+        self.search_coordinator = SearchCoordinator(config)
 
     def initialize(self) -> None:
         self.database.initialize()
+        self.index_synchronizer.initialize()
 
     def create(self, draft: MemoryPreSaveDraft) -> MemoryRecord:
         validate_draft(draft)
@@ -36,6 +47,7 @@ class MemoryStore:
             )
             self._save(connection, record)
             self._purge_expired(connection, now)
+        self._synchronize_index(record.id)
         return record
 
     def update(
@@ -53,6 +65,7 @@ class MemoryStore:
                 updated_at=self._next_timestamp(current),
             )
             self._replace(connection, current, record)
+        self._synchronize_index(record.id)
         return record
 
     def delete(
@@ -65,6 +78,7 @@ class MemoryStore:
             self._check_version(current, expected_updated_at)
             now = self._next_timestamp(current)
             self._replace(connection, current, replace(current, updated_at=now, deleted_at=now))
+        self._synchronize_index(memory_id)
 
     def restore(
         self, memory_id: str, *, revision_id: str | None = None,
@@ -88,7 +102,26 @@ class MemoryStore:
                 updated_at=now, deleted_at=None,
             )
             self._replace(connection, current, record)
+        self._synchronize_index(record.id)
         return record
+
+    def search(self, query: str) -> SearchResults:
+        return self.search_coordinator.search(query)
+
+    def reindex(self) -> None:
+        self.index_synchronizer.rebuild()
+
+    def index_update_pending(self) -> bool:
+        with self.search_store.snapshot(self.database) as connection:
+            return self.search_store.has_pending_updates(connection)
+
+    def _synchronize_index(self, memory_id: str) -> None:
+        try:
+            self.index_synchronizer.synchronize(memory_id=memory_id)
+        except (OSError, sqlite3.Error, ValueError) as error:
+            # Canonical content is already committed. Keep its pending request
+            # rather than report that the approved save failed.
+            logger.warning("Search index update pending: %s", error)
 
     def fetch(self, memory_id: str) -> MemoryRecord:
         with self.database.read() as connection:

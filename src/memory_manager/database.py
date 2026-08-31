@@ -1,4 +1,4 @@
-"""SQLite connections and the tables owned by this application."""
+"""Create database tables and manage SQLite connections."""
 
 from contextlib import contextmanager
 from pathlib import Path
@@ -43,7 +43,11 @@ SCHEMA = (
 )
 
 
-class MemoryDatabase:
+class SQLiteDatabase:
+    schema: tuple[str, ...]
+    application_id: int
+    schema_version = SCHEMA_VERSION
+
     def __init__(self, path: Path) -> None:
         self.path = path
 
@@ -60,17 +64,17 @@ class MemoryDatabase:
             connection.execute("BEGIN IMMEDIATE")
             version = connection.execute("PRAGMA user_version").fetchone()[0]
             application = connection.execute("PRAGMA application_id").fetchone()[0]
-            if version == SCHEMA_VERSION and application == APPLICATION_ID:
+            if version == self.schema_version and application == self.application_id:
                 return
             has_tables = connection.execute(
                 "SELECT 1 FROM sqlite_master WHERE type = 'table' LIMIT 1"
             ).fetchone()
             if version or application or has_tables:
-                raise ValueError("This file is not an empty or supported memory database")
-            for statement in SCHEMA:
+                raise ValueError(f"Not an empty or supported database: {self.path}")
+            for statement in self.schema:
                 connection.execute(statement)
-            connection.execute(f"PRAGMA application_id = {APPLICATION_ID}")
-            connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+            connection.execute(f"PRAGMA application_id = {self.application_id}")
+            connection.execute(f"PRAGMA user_version = {self.schema_version}")
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -92,12 +96,12 @@ class MemoryDatabase:
     @contextmanager
     def read(self) -> Iterator[sqlite3.Connection]:
         if not self.path.is_file():
-            raise ValueError("Memory database is not initialized; run memory init")
+            raise ValueError(f"Database is not initialized; run memory init: {self.path}")
         with self._connect() as connection:
             version = connection.execute("PRAGMA user_version").fetchone()[0]
             application = connection.execute("PRAGMA application_id").fetchone()[0]
-            if version != SCHEMA_VERSION or application != APPLICATION_ID:
-                raise ValueError("Unsupported memory database; no changes were made")
+            if version != self.schema_version or application != self.application_id:
+                raise ValueError(f"Unsupported database; no changes were made: {self.path}")
             yield connection
 
     @contextmanager
@@ -106,3 +110,8 @@ class MemoryDatabase:
             # Take the write lock before reading the version we intend to replace.
             connection.execute("BEGIN IMMEDIATE")
             yield connection
+
+
+class MemoryDatabase(SQLiteDatabase):
+    schema = SCHEMA
+    application_id = APPLICATION_ID

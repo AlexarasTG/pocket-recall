@@ -1,4 +1,4 @@
-"""Keep older content in the same transaction as the edit that replaces it."""
+"""Keep older memory versions for recovery. Save them together with the changes that replace them."""
 
 from datetime import datetime, timedelta
 import json
@@ -29,7 +29,7 @@ def archived_entry_from_row(row: sqlite3.Row) -> ArchivedMemoryEntry:
     )
 
 
-class MemoryArchiveStore:
+class ArchivedMemoryStore:
     def retain(
         self,
         connection: sqlite3.Connection,

@@ -2,21 +2,19 @@
 
 import argparse
 import json
-import sqlite3
 import sys
 from dataclasses import asdict
 from pathlib import Path
 
 from pocket_recall.config import MemoryConfig
-from pocket_recall.errors import EmbeddingError, MemoryLookupError
+from pocket_recall.errors import ConcurrentUpdateError, MemoryLookupError, ServiceError
 from pocket_recall.models import MemoryPreSaveDraft, MemoryRecord
-from pocket_recall.storage.memory_store import ConcurrentUpdateError, MemoryStore
+from pocket_recall.transport.pocket_recall_client import PocketRecallClient
 from pocket_recall.validation import validate_draft
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="memory", description="Manage your local memory library")
-    parser.add_argument("--data-dir", type=Path, required=True, help="Directory containing memory.sqlite")
     commands = parser.add_subparsers(dest="command", required=True)
     save = commands.add_parser("save", help="Preview a new memory, or update an existing ID")
     save.add_argument("id", nargs="?", help="Existing memory ID; omit to create a memory")
@@ -55,6 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
     actions.add_parser("init", help="Initialize local storage and its search index")
     actions.add_parser("status", help="Check whether the search index is up to date")
     actions.add_parser("reindex", help="Rebuild search data from saved memories without changing them")
+    actions.add_parser("stop", help="Stop the shared local service")
     return parser
 
 
@@ -108,7 +107,7 @@ def print_saved(record: MemoryRecord) -> None:
 
 
 class MemoryCLI:
-    def __init__(self, store: MemoryStore) -> None:
+    def __init__(self, store: PocketRecallClient) -> None:
         self.store = store
 
     def run(self, args: argparse.Namespace) -> None:
@@ -160,10 +159,12 @@ class MemoryCLI:
 
     def maintenance(self, args: argparse.Namespace) -> None:
         if args.maintenance_command == "init":
-            self.store.initialize()
-            print(f"Memory database ready: {self.store.config.memory_database}")
+            print(f"Memory database ready: {self.store.initialize()}")
         elif args.maintenance_command == "reindex":
             self.store.reindex()
+        elif args.maintenance_command == "stop":
+            print("Pocket Recall service stopped" if self.store.stop() else "Pocket Recall service is not running")
+            return
         self.print_index_status()
 
     def create(self, args: argparse.Namespace) -> None:
@@ -242,7 +243,7 @@ class MemoryCLI:
     def print_index_status(self) -> None:
         try:
             pending = self.store.index_update_pending()
-        except (OSError, sqlite3.Error, ValueError) as error:
+        except (OSError, ValueError, ServiceError) as error:
             print("Search index update pending")
             print(f"Index status unavailable: {error}", file=sys.stderr)
         else:
@@ -266,13 +267,9 @@ def main(argv: list[str] | None = None) -> int:
                 search_options["semantic_fallback_policy"] = args.semantic_policy
             if args.similarity_threshold is not None:
                 search_options["semantic_similarity_threshold"] = args.similarity_threshold
-        config = MemoryConfig(data_directory=args.data_dir.expanduser().resolve(), **search_options)
-        store = MemoryStore(config)
-        try:
-            MemoryCLI(store).run(args)
-        finally:
-            store.model_lifecycle_manager.close()
-    except (ValueError, MemoryLookupError, ConcurrentUpdateError, EmbeddingError, OSError, sqlite3.Error) as error:
+        config = MemoryConfig(**search_options)
+        MemoryCLI(PocketRecallClient(config)).run(args)
+    except (ValueError, MemoryLookupError, ConcurrentUpdateError, ServiceError, OSError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:

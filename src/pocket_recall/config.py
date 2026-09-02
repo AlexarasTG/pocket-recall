@@ -5,6 +5,8 @@ from math import isfinite
 from pathlib import Path
 from typing import ClassVar, Literal
 
+DEFAULT_DATA_DIRECTORY = Path.home() / ".local" / "share" / "pocket-recall"
+
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class MemoryConfig:
@@ -18,7 +20,7 @@ class MemoryConfig:
     RECORD_BODY_CHARACTER_LIMIT: ClassVar[int] = 1_000
     SEARCH_PREVIEW_CHARACTER_LIMIT: ClassVar[int] = 160
 
-    data_directory: Path
+    data_directory: Path = DEFAULT_DATA_DIRECTORY
     enabled_workspace_roots: tuple[Path, ...] = ()
     max_candidates_per_search: int = 5
     max_fetch_records_per_subproblem: int = 3
@@ -34,6 +36,12 @@ class MemoryConfig:
     audit_max_bytes: int = 100_000_000
     daily_snapshots_to_keep: int = 7
     model_idle_timeout_minutes: int = 60
+    max_concurrent_requests: int = 16
+    socket_startup_timeout_seconds: int = 5
+    normal_request_timeout_seconds: int = 30
+    maintenance_request_timeout_seconds: int = 300
+    max_socket_request_bytes: int = 65_536
+    index_retry_delays_seconds: tuple[int, ...] = (5, 30, 120, 600)
 
     def __post_init__(self) -> None:
         for path in (self.data_directory, *self.enabled_workspace_roots):
@@ -50,6 +58,11 @@ class MemoryConfig:
             "daily_snapshots_to_keep",
             "model_idle_timeout_minutes",
             "embedding_threads",
+            "max_concurrent_requests",
+            "socket_startup_timeout_seconds",
+            "normal_request_timeout_seconds",
+            "maintenance_request_timeout_seconds",
+            "max_socket_request_bytes",
         )
         for name in positive_limits:
             if getattr(self, name) <= 0:
@@ -62,6 +75,8 @@ class MemoryConfig:
             raise ValueError("Semantic fallback policy must be on_zero_results or fill_remaining_slots")
         if not isfinite(self.semantic_similarity_threshold) or not -1 <= self.semantic_similarity_threshold <= 1:
             raise ValueError("Semantic similarity threshold must be between -1 and 1")
+        if len(self.index_retry_delays_seconds) != 4 or any(delay <= 0 for delay in self.index_retry_delays_seconds):
+            raise ValueError("Index retry delays must contain four positive values")
 
     @property
     def model_directory(self) -> Path:
@@ -78,3 +93,15 @@ class MemoryConfig:
     @property
     def audit_database(self) -> Path:
         return self.data_directory / "audit.sqlite"
+
+    @property
+    def service_socket(self) -> Path:
+        return self.data_directory / "service.sock"
+
+    @property
+    def service_lock(self) -> Path:
+        return self.data_directory / "service.lock"
+
+    @property
+    def service_log(self) -> Path:
+        return self.data_directory / "service.log"

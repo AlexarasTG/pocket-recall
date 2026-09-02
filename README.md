@@ -22,11 +22,15 @@ and the terminal command is `memory`.
 - `embeddings/embedding_provider.py`: local model loading, input checks, and normalized vectors.
 - `embeddings/model_lifecycle_manager.py`: lazy model loading, shared use within the core, and idle unloading.
 - `embeddings/model_specification.py`: model name, repository, pinned revision, dimensions, token limit, and query instruction.
+- `transport/pocket_recall_service.py`: shared storage/model access, concurrent socket requests, logging, and index retries.
+- `transport/pocket_recall_client.py`: Pocket Recall operations, one-request socket calls, and automatic service startup.
+- `transport/operation_dispatcher.py`: explicit internal operations mapped to the core.
+- `transport/service_protocol.py`: versioned newline-delimited JSON messages.
 - `validation.py`: body-length and obvious-secret checks.
 - `cli.py`: terminal commands, previews, and confirmation.
 
-Data-directory and workspace paths are explicit configuration. No developer
-home directory or company workspace is built into the package. Empty workspace
+Pocket Recall keeps one private local library in `~/.local/share/pocket-recall/`.
+No developer or company workspace is built into the package. Empty workspace
 allowlists disable automatic client activation.
 
 Model-specific facts stay together in `embeddings/model_specification.py`;
@@ -40,15 +44,15 @@ Install in a virtual environment from the project directory:
 ```sh
 python3 -m venv .venv
 .venv/bin/python -m pip install -e .
-.venv/bin/memory --data-dir /path/to/private/library maintenance init
-.venv/bin/memory --data-dir /path/to/private/library save \
+.venv/bin/memory maintenance init
+.venv/bin/memory save \
   --title "Example concept" --body "A short explanation." --alias "EC"
 ```
 
-Installing the package also provides the `memory` command. Every command takes
-`--data-dir` before the command name. `maintenance init` is explicit and safe to
-repeat; `maintenance reindex` can recreate a missing search index. Other commands
-do not create missing databases.
+Installing the package also provides the `memory` command. `maintenance init` is
+explicit, safe to repeat, and prepares the local databases and model.
+`maintenance reindex` can recreate a missing search index. Other commands do not
+create missing databases.
 
 For development, include the formatting tools:
 
@@ -81,6 +85,12 @@ Maintenance commands:
 - `maintenance init`
 - `maintenance status`
 - `maintenance reindex`
+- `maintenance stop`
+
+Commands connect to one background service over an owner-only Unix socket. The
+first command starts it automatically; laptop shutdown or `maintenance stop`
+ends it. The next command starts it again. The service is the only runtime
+gateway to the library, while `memory.sqlite` remains authoritative.
 
 `save` without an ID creates a memory and requires a title and body. `save ID`
 updates that exact memory; an unknown or deleted ID fails instead of creating
@@ -143,7 +153,7 @@ Semantic excerpts use the opening of the body.
 To experiment without changing saved data or rebuilding the index:
 
 ```sh
-memory --data-dir /path/to/private/library search "recording interval" \
+memory search "recording interval" \
   --semantic-policy fill_remaining_slots --similarity-threshold 0.85
 ```
 
@@ -187,11 +197,20 @@ raise an embedding error instead of silently truncating text. This does not
 change the 1,000-character storage limit; an approved memory remains saved with
 indexing pending if its combined input cannot be embedded.
 
-One `MemoryStore` shares one lazy model between indexing and search. It unloads
-after 60 minutes without model use (`model_idle_timeout_minutes`), using an idle
-timer rather than polling. Direct reads, status, and successful lexical searches
-do not load it. CLI processes release it on exit; separate CLI processes do not
-share a model instance.
+The daemon's one `MemoryStore` shares one lazy model between indexing and search
+for every client. It unloads after 60 minutes without model use
+(`model_idle_timeout_minutes`), using an idle timer rather than polling. Direct
+reads, status, and successful lexical searches do not load it.
+
+Each socket connection carries one versioned JSON request and response. The
+service handles at most 16 requests concurrently and rejects requests over 64 KB.
+Failed index updates stay durable and receive four in-memory retries after 5
+seconds, 30 seconds, 2 minutes, and 10 minutes. A restart tries pending work
+again; `maintenance reindex` remains the manual recovery path.
+
+Minimal rotating service logs live beside the databases as `service.log` plus
+two 1 MB backups. They record request IDs, operation names, lifecycle events,
+and failures—not memory content, aliases, queries, or results.
 
 New database directories are created with owner-only access where supported,
 and database files with owner read/write access. Existing directory permissions

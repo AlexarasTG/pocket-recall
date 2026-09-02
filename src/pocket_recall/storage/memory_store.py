@@ -5,11 +5,16 @@ import logging
 import sqlite3
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 from uuid import uuid4
 
 from pocket_recall.config import MemoryConfig
 from pocket_recall.embeddings.model_lifecycle_manager import ModelLifecycleManager
-from pocket_recall.errors import EmbeddingError, MemoryLookupError
+from pocket_recall.errors import (
+    ConcurrentUpdateError,
+    EmbeddingError,
+    MemoryLookupError,
+)
 from pocket_recall.models import (
     ArchivedMemoryEntry,
     MemoryPreSaveDraft,
@@ -27,10 +32,6 @@ from pocket_recall.storage.search_store import SearchStore
 from pocket_recall.validation import validate_draft
 
 logger = logging.getLogger(__name__)
-
-
-class ConcurrentUpdateError(RuntimeError):
-    """The memory changed after it was shown for approval."""
 
 
 class MemoryStore:
@@ -144,8 +145,28 @@ class MemoryStore:
         self._synchronize_index(record.id)
         return record
 
-    def search(self, query: str) -> SearchResults:
-        return self.search_coordinator.search(query)
+    def search(
+        self,
+        query: str,
+        *,
+        semantic_policy: Literal["on_zero_results", "fill_remaining_slots"] | None = None,
+        similarity_threshold: float | None = None,
+    ) -> SearchResults:
+        if semantic_policy is None and similarity_threshold is None:
+            return self.search_coordinator.search(query)
+        config = replace(
+            self.config,
+            semantic_fallback_policy=semantic_policy or self.config.semantic_fallback_policy,
+            semantic_similarity_threshold=(
+                similarity_threshold if similarity_threshold is not None else self.config.semantic_similarity_threshold
+            ),
+        )
+        return SearchCoordinator(
+            config,
+            self.database,
+            self.search_store,
+            self.model_lifecycle_manager,
+        ).search(query)
 
     def reindex(self) -> None:
         self.index_synchronizer.rebuild()

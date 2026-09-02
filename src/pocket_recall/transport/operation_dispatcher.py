@@ -1,10 +1,16 @@
 """Connect service operation names to the code that performs them."""
 
+import logging
+import sqlite3
 from datetime import datetime
 from typing import Any, Callable
 
 from pocket_recall.models import MemoryPreSaveDraft
+from pocket_recall.storage.database_snapshot_manager import DatabaseSnapshotManager
 from pocket_recall.storage.memory_store import MemoryStore
+from pocket_recall.storage.retrieval_audit_store import RetrievalAuditStore
+
+logger = logging.getLogger(__name__)
 
 
 class OperationDispatcher:
@@ -13,15 +19,19 @@ class OperationDispatcher:
     def __init__(
         self,
         store: MemoryStore,
+        audit_store: RetrievalAuditStore,
+        snapshot_manager: DatabaseSnapshotManager,
         *,
         index_changed: Callable[[], None],
         stop_service: Callable[[], None],
     ) -> None:
         self.store = store
+        self.audit_store = audit_store
+        self.snapshot_manager = snapshot_manager
         self.index_changed = index_changed
         self.stop_service = stop_service
 
-    def dispatch(self, operation: str, arguments: dict[str, Any]) -> object:
+    def dispatch(self, operation: str, arguments: dict[str, Any]) -> tuple[object, tuple[str, ...]]:
         handlers: dict[str, Callable[[dict[str, Any]], object]] = {
             "memory.create": self._create,
             "memory.update": self._update,
@@ -44,7 +54,19 @@ class OperationDispatcher:
             handler = handlers[operation]
         except KeyError as error:
             raise ValueError(f"Unknown operation: {operation}") from error
-        return handler(arguments)
+        warnings = self._create_snapshot_before(operation)
+        return handler(arguments), warnings
+
+    def _create_snapshot_before(self, operation: str) -> tuple[str, ...]:
+        if operation not in ("memory.create", "memory.update", "memory.delete", "memory.restore"):
+            return ()
+        try:
+            self.snapshot_manager.create_daily_snapshot()
+        except (OSError, sqlite3.Error, ValueError) as error:
+            message = f"Daily database snapshot failed: {error}"
+            logger.warning(message)
+            return (message,)
+        return ()
 
     def _create(self, arguments: dict[str, Any]) -> object:
         result = self.store.create(self._draft(arguments))
@@ -119,11 +141,15 @@ class OperationDispatcher:
     def _initialize(self, arguments: dict[str, Any]) -> object:
         self._empty(arguments)
         self.store.initialize()
+        self.audit_store.initialize()
         return {"memory_database": str(self.store.config.memory_database), "index_update_pending": False}
 
     def _status(self, arguments: dict[str, Any]) -> object:
         self._empty(arguments)
-        return {"index_update_pending": self.store.index_update_pending()}
+        return {
+            "index_update_pending": self.store.index_update_pending(),
+            "retrieval_audit": self.audit_store.status(),
+        }
 
     def _reindex(self, arguments: dict[str, Any]) -> object:
         self._empty(arguments)

@@ -17,13 +17,16 @@ def request_message(request_id: str, operation: str, arguments: dict[str, object
     }
 
 
-def success_message(request_id: str, result: object) -> dict[str, object]:
-    return {
+def success_message(request_id: str, result: object, *, warnings: tuple[str, ...] = ()) -> dict[str, object]:
+    message: dict[str, object] = {
         "protocol_version": PROTOCOL_VERSION,
         "request_id": request_id,
         "success": True,
         "result": json_value(result),
     }
+    if warnings:
+        message["warnings"] = list(warnings)
+    return message
 
 
 def error_message(request_id: str, code: str, message: str) -> dict[str, object]:

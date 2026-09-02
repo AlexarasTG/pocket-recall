@@ -1,10 +1,12 @@
 """Run Pocket Recall's shared background service."""
 
 import fcntl
+import json
 import logging
 import os
 import socketserver
 import sqlite3
+import time
 from concurrent.futures import ThreadPoolExecutor
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -17,7 +19,10 @@ from pocket_recall.errors import (
     EmbeddingError,
     MemoryLookupError,
 )
+from pocket_recall.models import MemoryRecord, SearchResults
+from pocket_recall.storage.database_snapshot_manager import DatabaseSnapshotManager
 from pocket_recall.storage.memory_store import MemoryStore
+from pocket_recall.storage.retrieval_audit_store import RetrievalAuditStore
 from pocket_recall.transport.operation_dispatcher import OperationDispatcher
 from pocket_recall.transport.service_protocol import (
     decode_message,
@@ -76,8 +81,11 @@ class _ServiceRequestHandler(socketserver.StreamRequestHandler):
                 request_id = supplied_id
             request_id, operation, arguments = validate_request(message)
             logger.info("request_id=%s operation=%s", request_id, operation)
-            result = daemon.dispatcher.dispatch(operation, arguments)
-            response = success_message(request_id, result)
+            started_at = time.perf_counter()
+            result, warnings = daemon.dispatcher.dispatch(operation, arguments)
+            duration_milliseconds = (time.perf_counter() - started_at) * 1_000
+            response = success_message(request_id, result, warnings=warnings)
+            daemon.audit_retrieval(operation, arguments, result, response["result"], duration_milliseconds)
         except ValueError as error:
             response = error_message(request_id, "invalid_request", str(error))
         except MemoryLookupError as error:
@@ -100,8 +108,12 @@ class PocketRecallService:
     def __init__(self, config: MemoryConfig | None = None) -> None:
         self.config = config or MemoryConfig()
         self.store = MemoryStore(self.config)
+        self.audit_store = RetrievalAuditStore(self.config)
+        self.snapshot_manager = DatabaseSnapshotManager(self.config)
         self.dispatcher = OperationDispatcher(
             self.store,
+            self.audit_store,
+            self.snapshot_manager,
             index_changed=self.schedule_index_retries,
             stop_service=self.request_stop,
         )
@@ -109,6 +121,34 @@ class PocketRecallService:
         self._lock_file: Any = None
         self._retry_timer: Timer | None = None
         self._retry_lock = RLock()
+
+    def audit_retrieval(
+        self,
+        operation: str,
+        arguments: dict[str, Any],
+        result: object,
+        json_result: object,
+        duration_milliseconds: float,
+    ) -> None:
+        if operation not in ("search", "memory.get"):
+            return
+        returned_characters = len(json.dumps(json_result, ensure_ascii=True, separators=(",", ":")))
+        try:
+            if operation == "search" and isinstance(result, SearchResults):
+                self.audit_store.record_search(
+                    str(arguments["query"]),
+                    result.candidates,
+                    returned_characters=returned_characters,
+                    duration_milliseconds=duration_milliseconds,
+                )
+            elif operation == "memory.get" and isinstance(result, MemoryRecord):
+                self.audit_store.record_fetch(
+                    result.id,
+                    returned_characters=returned_characters,
+                    duration_milliseconds=duration_milliseconds,
+                )
+        except (OSError, sqlite3.Error, ValueError) as error:
+            logger.warning("Retrieval audit write failed: %s", error)
 
     def serve_forever(self) -> bool:
         self.config.data_directory.mkdir(mode=0o700, parents=True, exist_ok=True)

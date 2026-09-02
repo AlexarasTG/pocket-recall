@@ -16,6 +16,8 @@ and the terminal command is `memory`.
 - `storage/archived_memory_store.py`: archived versions and recovery expiry dates.
 - `storage/database.py`: database initialization and transactions.
 - `storage/search_store.py`: SQLite search-index storage and queries that find matching records.
+- `storage/retrieval_audit_store.py`: compact retrieval measurements and their retention limits.
+- `storage/database_snapshot_manager.py`: daily canonical snapshots and database restoration.
 - `retrieval/index_synchronizer.py`: apply pending changes and rebuild derived search data.
 - `retrieval/search_coordinator.py`: decides which matching method to try and builds short search results.
 - `retrieval/search_text_processing.py`: query normalization, spelling checks, and excerpt selection.
@@ -85,6 +87,7 @@ Maintenance commands:
 - `maintenance init`
 - `maintenance status`
 - `maintenance reindex`
+- `maintenance restore YYYY-MM-DD`
 - `maintenance stop`
 
 Commands connect to one background service over an owner-only Unix socket. The
@@ -126,6 +129,14 @@ date, refreshes the update date, and retains the displaced version. Expired
 recovery data is hidden immediately and removed during subsequent approved
 writes; it cannot be restored through the application.
 
+Before the first saved-memory change of each local calendar day, Pocket Recall
+stores a validated copy of `memory.sqlite` under `snapshots/`. It keeps the seven
+newest daily snapshots. Snapshot failure does not block the memory change, but it
+is reported as a warning. `maintenance restore YYYY-MM-DD` stops the service,
+validates and restores that snapshot, preserves the previous database as
+`memory-before-restore.sqlite`, rebuilds the search index, and leaves the service
+stopped. The next normal command starts it again.
+
 Saving a memory and marking its search-index update as pending is one database
 transaction. Indexing is attempted immediately afterward. A failed index update
 does not undo the save; its pending request remains durable. Keyword and vector
@@ -133,9 +144,17 @@ changes commit together. A failed embedding leaves the new version readable by
 ID but not searchable until indexing succeeds; outdated indexed versions are excluded.
 `maintenance status` reports
 whether the index is up to date, checking both queued updates and missing or stale
-indexed records. `maintenance reindex` rebuilds the disposable
+indexed records. It also reports the retrieval-audit file size, event count, and
+oldest/newest event dates. `maintenance reindex` rebuilds the disposable
 index from current active records without changing their content or timestamps.
 The `read` command reads saved records, not the search index.
+
+Successful searches and full-record fetches add compact rows to `audit.sqlite`.
+Search rows contain the query, returned IDs, match kinds and scores, character
+count, and duration; fetch rows contain the selected ID and response measurements.
+Memory content is not copied into this database. Events expire after 30 days, and
+the database is trimmed from 10 MB toward 8 MB when necessary. Audit-write failure
+is logged and never blocks retrieval.
 
 Search tries whole title/alias matches first, ignoring case and extra whitespace.
 If any exist, only that tier is returned. Otherwise, all query words must match

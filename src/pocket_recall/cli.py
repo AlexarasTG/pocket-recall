@@ -53,6 +53,8 @@ def build_parser() -> argparse.ArgumentParser:
     actions.add_parser("init", help="Initialize local storage and its search index")
     actions.add_parser("status", help="Check whether the search index is up to date")
     actions.add_parser("reindex", help="Rebuild search data from saved memories without changing them")
+    restore_snapshot = actions.add_parser("restore", help="Restore the canonical database from a daily snapshot")
+    restore_snapshot.add_argument("date", help="Snapshot date in YYYY-MM-DD format")
     actions.add_parser("stop", help="Stop the shared local service")
     return parser
 
@@ -160,8 +162,15 @@ class MemoryCLI:
     def maintenance(self, args: argparse.Namespace) -> None:
         if args.maintenance_command == "init":
             print(f"Memory database ready: {self.store.initialize()}")
+        elif args.maintenance_command == "status":
+            print_json(self.store.maintenance_status())
+            return
         elif args.maintenance_command == "reindex":
             self.store.reindex()
+        elif args.maintenance_command == "restore":
+            self.store.restore_database_snapshot(args.date)
+            print(f"Memory database restored from {args.date}; Pocket Recall service is stopped")
+            return
         elif args.maintenance_command == "stop":
             print("Pocket Recall service stopped" if self.store.stop() else "Pocket Recall service is not running")
             return

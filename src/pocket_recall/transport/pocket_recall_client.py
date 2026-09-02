@@ -1,12 +1,16 @@
 """Send Pocket Recall operations to its shared background service."""
 
+import fcntl
+import logging
+import os
 import socket
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 from uuid import uuid4
 
 from pocket_recall.config import MemoryConfig
@@ -18,12 +22,16 @@ from pocket_recall.models import (
     SearchCandidate,
     SearchResults,
 )
+from pocket_recall.storage.database_snapshot_manager import DatabaseSnapshotManager
+from pocket_recall.storage.memory_store import MemoryStore
 from pocket_recall.transport.service_protocol import (
     PROTOCOL_VERSION,
     decode_message,
     encode_message,
     request_message,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class PocketRecallClient:
@@ -133,8 +141,21 @@ class PocketRecallClient:
         self._request("maintenance.reindex", {})
 
     def index_update_pending(self) -> bool:
-        result = self._object_result(self._request("maintenance.status", {}))
+        result = self.maintenance_status()
         return self._boolean(result, "index_update_pending")
+
+    def maintenance_status(self) -> dict[str, Any]:
+        return self._object_result(self._request("maintenance.status", {}))
+
+    def restore_database_snapshot(self, snapshot_date: str) -> None:
+        self.stop()
+        with self._exclusive_service_lock():
+            DatabaseSnapshotManager(self.config).restore_snapshot(snapshot_date)
+            store = MemoryStore(self.config)
+            try:
+                store.reindex()
+            finally:
+                store.model_lifecycle_manager.close()
 
     def health(self) -> bool:
         result = self._object_result(self._request("service.health", {}))
@@ -209,6 +230,13 @@ class PocketRecallClient:
         if response.get("protocol_version") != PROTOCOL_VERSION or response.get("request_id") != request_id:
             raise ServiceError("internal_error", "Service returned an invalid response envelope")
         if response.get("success") is True and "result" in response:
+            response_warnings = response.get("warnings", [])
+            if not isinstance(response_warnings, list) or any(
+                not isinstance(message, str) for message in response_warnings
+            ):
+                raise ServiceError("internal_error", "Service returned invalid warnings")
+            for message in response_warnings:
+                logger.warning(message)
             return response["result"]
         error = response.get("error")
         if response.get("success") is not False or not isinstance(error, dict):
@@ -249,6 +277,26 @@ class PocketRecallClient:
         if not isinstance(value, bool):
             raise ServiceError("internal_error", f"Service returned an invalid {name}")
         return value
+
+    @contextmanager
+    def _exclusive_service_lock(self) -> Iterator[None]:
+        self.config.data_directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        descriptor = os.open(self.config.service_lock, os.O_CREAT | os.O_RDWR, 0o600)
+        lock_file = os.fdopen(descriptor, "r+")
+        deadline = time.monotonic() + self.config.socket_startup_timeout_seconds
+        try:
+            while True:
+                try:
+                    fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if time.monotonic() >= deadline:
+                        raise ServiceError("unavailable", "Pocket Recall service did not stop in time")
+                    time.sleep(0.05)
+            yield
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
+            lock_file.close()
 
     @staticmethod
     def _record(result: object) -> MemoryRecord:

@@ -33,7 +33,8 @@ class MemoryConfig:
     embedding_threads: int = 2
     recovery_retention_days: int = 60
     audit_retention_days: int = 30
-    audit_max_bytes: int = 100_000_000
+    audit_max_bytes: int = 10_000_000
+    audit_trim_target_bytes: int = 8_000_000
     daily_snapshots_to_keep: int = 7
     model_idle_timeout_minutes: int = 60
     max_concurrent_requests: int = 16
@@ -55,6 +56,7 @@ class MemoryConfig:
             "recovery_retention_days",
             "audit_retention_days",
             "audit_max_bytes",
+            "audit_trim_target_bytes",
             "daily_snapshots_to_keep",
             "model_idle_timeout_minutes",
             "embedding_threads",
@@ -77,6 +79,8 @@ class MemoryConfig:
             raise ValueError("Semantic similarity threshold must be between -1 and 1")
         if len(self.index_retry_delays_seconds) != 4 or any(delay <= 0 for delay in self.index_retry_delays_seconds):
             raise ValueError("Index retry delays must contain four positive values")
+        if self.audit_trim_target_bytes >= self.audit_max_bytes:
+            raise ValueError("Audit trim target must be smaller than the audit size limit")
 
     @property
     def model_directory(self) -> Path:
@@ -93,6 +97,14 @@ class MemoryConfig:
     @property
     def audit_database(self) -> Path:
         return self.data_directory / "audit.sqlite"
+
+    @property
+    def snapshot_directory(self) -> Path:
+        return self.data_directory / "snapshots"
+
+    @property
+    def database_before_restore(self) -> Path:
+        return self.data_directory / "memory-before-restore.sqlite"
 
     @property
     def service_socket(self) -> Path:

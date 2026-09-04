@@ -46,7 +46,8 @@ Each tool is limited to three calls per user turn. Memory content enters model
 context only through tool results.
 
 `/remember_this STATEMENT` temporarily exposes `pocket_recall_save`. The model
-structures only that statement, then the extension opens a JSON editor and an
-explicit confirmation dialog. Cancelling, completing the request, or letting the
-agent settle removes the one-use intent and hides the save tool. The backend
-performs authoritative validation before persistence.
+structures only that statement, then the extension opens a JSON editor. Submitting
+the valid draft approves and saves it; cancelling saves nothing. Completing or
+cancelling the request, or letting the agent settle, removes the one-use intent
+and hides the save tool. The backend performs authoritative validation before
+persistence.

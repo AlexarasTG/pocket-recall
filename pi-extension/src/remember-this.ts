@@ -53,17 +53,6 @@ export function registerRememberThis(pi: ExtensionAPI, client: PocketRecallClien
           };
         }
 
-        const bodyCharacters = countUnicodeCodePoints(draft.body);
-        const approved = await ctx.ui.confirm(
-          "Create memory",
-          `${JSON.stringify(draft, null, 2)}\n\nBody: ${bodyCharacters} / ${BODY_CHARACTER_LIMIT} characters`,
-        );
-        if (!approved) {
-          return {
-            content: [{ type: "text", text: "Memory creation cancelled; nothing was saved." }],
-          };
-        }
-
         const saved = await client.create(draft, signal);
         let indexMessage = "Search index update pending";
         let indexStatusWarning: string | undefined;
@@ -142,7 +131,7 @@ async function editDraft(
 ): Promise<MemoryDraft | undefined> {
   let editorText = JSON.stringify(proposedDraft, null, 2);
   while (true) {
-    const edited = await ctx.ui.editor("Edit memory draft", editorText);
+    const edited = await ctx.ui.editor("Review memory — submit to save", editorText);
     if (edited === undefined) return undefined;
     editorText = edited;
     try {

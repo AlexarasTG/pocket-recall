@@ -89,7 +89,6 @@ export function registerRememberThis(pi: ExtensionAPI, client: PocketRecallClien
       }
     },
   });
-  hideSaveTool();
 
   pi.registerCommand("remember_this", {
     description: "Propose a user-approved Pocket Recall memory",
@@ -133,6 +132,7 @@ export function registerRememberThis(pi: ExtensionAPI, client: PocketRecallClien
   pi.on("agent_settled", () => {
     if (intentState === "waiting") clearIntent();
   });
+  pi.on("session_start", hideSaveTool);
   pi.on("session_shutdown", clearIntent);
 }
 

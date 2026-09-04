@@ -30,6 +30,7 @@ and the terminal command is `memory`.
 - `transport/service_protocol.py`: versioned newline-delimited JSON messages.
 - `validation.py`: body-length and obvious-secret checks.
 - `cli.py`: terminal commands, previews, and confirmation.
+- `pi-extension/`: optional Pi integration for workspace-gated recall and `/remember_this`.
 
 Pocket Recall keeps one private local library in `~/.local/share/pocket-recall/`.
 No developer or company workspace is built into the package. Empty workspace
@@ -37,6 +38,12 @@ allowlists disable automatic client activation.
 
 Model-specific facts stay together in `embeddings/model_specification.py`;
 adjustable settings such as thresholds, thread counts, and timeouts live in `config.py`.
+
+## Pi extension
+
+The optional TypeScript package under [`pi-extension/`](pi-extension/) exposes
+compact search/fetch tools and the explicitly approved `/remember_this` flow.
+See its README for configuration and development loading instructions.
 
 ## Terminal usage
 

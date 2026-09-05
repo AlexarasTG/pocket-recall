@@ -29,7 +29,7 @@ class MemoryConfig:
     body_search_weight: float = 1.0
     typo_matching_enabled: bool = True
     semantic_fallback_policy: Literal["on_zero_results", "fill_remaining_slots"] = "on_zero_results"
-    semantic_similarity_threshold: float = 0.85
+    semantic_similarity_threshold: float = 0.65
     embedding_threads: int = 2
     recovery_retention_days: int = 60
     audit_retention_days: int = 30

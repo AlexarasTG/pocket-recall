@@ -1,8 +1,8 @@
 # Pocket Recall
 
-Pocket Recall is a local-first memory tool for coding agents. You choose what is
-saved; agents automatically search for relevant knowledge and fetch only the
-records they need. Memories and embeddings stay on your machine.
+Pocket Recall is a local-first memory tool for coding agents. You have complete 
+control over what is saved; agents automatically search for relevant knowledge 
+and fetch only the records they need. Memories and embeddings stay on your machine.
 
 It provides:
 

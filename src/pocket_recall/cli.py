@@ -39,7 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("on_zero_results", "fill_remaining_slots"),
         help="When to try semantic search (default: on_zero_results)",
     )
-    search.add_argument("--similarity-threshold", type=float, help="Minimum semantic similarity (default: 0.85)")
+    search.add_argument("--similarity-threshold", type=float, help="Minimum semantic similarity (default: 0.65)")
 
     delete = commands.add_parser("delete", help="Preview and soft-delete a memory")
     delete.add_argument("id")

@@ -28,6 +28,7 @@ and the terminal command is `memory`.
 - `transport/pocket_recall_client.py`: Pocket Recall operations, one-request socket calls, and automatic service startup.
 - `transport/operation_dispatcher.py`: explicit internal operations mapped to the core.
 - `transport/service_protocol.py`: versioned newline-delimited JSON messages.
+- `mcp/server.py`: Codex-compatible search, fetch, and approved create tools over MCP.
 - `validation.py`: body-length and obvious-secret checks.
 - `cli.py`: terminal commands, previews, and confirmation.
 - `pi-extension/`: optional Pi integration for workspace-gated recall and `/remember_this`.
@@ -44,6 +45,35 @@ adjustable settings such as thresholds, thread counts, and timeouts live in `con
 The optional TypeScript package under [`pi-extension/`](pi-extension/) exposes
 compact search/fetch tools and the explicitly approved `/remember_this` flow.
 See its README for configuration and development loading instructions.
+
+## Codex MCP integration
+
+Pocket Recall provides a lightweight STDIO MCP adapter. It exposes compact
+`search`, single-record `fetch`, and create-only `save`. The adapter starts with
+Codex, while the Pocket Recall daemon and embedding model remain lazy.
+
+For developer testing, install the editable package and register the adapter once:
+
+```sh
+.venv/bin/python -m pip install -e .
+codex mcp add pocket-recall -- "$(pwd)/.venv/bin/pocket-recall-mcp"
+```
+
+Then configure Codex so reads run automatically and every save requires approval:
+
+```toml
+[mcp_servers.pocket-recall]
+default_tools_approval_mode = "writes"
+
+[mcp_servers.pocket-recall.tools.save]
+approval_mode = "prompt"
+```
+
+Restart Codex after registration. The MCP adapter is globally available but
+loads no stored content until Codex calls `search` or `fetch`. Ask naturally,
+for example: `Remember this: ST means start times. Use ST and start times as aliases.`
+The save approval displays the proposed title, body, and aliases. Reject it and
+state corrections if the draft needs editing.
 
 ## Terminal usage
 
@@ -173,14 +203,14 @@ confidence, and should not be compared between different queries.
 By default, semantic search runs only when exact, keyword, and typo searches
 return nothing. It compares one vector per memory, built from its title, aliases,
 and body. IDs and dates are excluded. The default cosine-similarity cutoff is
-0.85; this is a provisional relevance filter, not an 85% confidence estimate.
+0.65; this is a provisional relevance filter, not a confidence estimate.
 Semantic excerpts use the opening of the body.
 
 To experiment without changing saved data or rebuilding the index:
 
 ```sh
 memory search "recording interval" \
-  --semantic-policy fill_remaining_slots --similarity-threshold 0.85
+  --semantic-policy fill_remaining_slots --similarity-threshold 0.65
 ```
 
 `fill_remaining_slots` keeps the existing exact/keyword/typo candidates first, then appends

@@ -7,9 +7,7 @@ and fetch only the records they need. Memories and embeddings stay on your machi
 It provides:
 
 - a `memory` CLI for managing the library;
-- an MCP server for any harness that supports local STDIO servers;
-- an optional Pi extension with automatic recall and `/remember_this` to control
-  the input data stored in memory.
+- an MCP server for any harness that supports local STDIO servers.
 
 ## How it works
 
@@ -89,9 +87,19 @@ approval_mode = "prompt"
 
 ## Pi integration
 
-The optional [`pi-extension/`](pi-extension/) package adds workspace-gated
-automatic recall and `/remember_this`. Its README contains the development setup
-and configuration.
+Pi supports Pocket Recall through its built-in MCP client. Register the local
+server once, then restart Pi or run `/reload`:
+
+```sh
+pi mcp add pocket-recall --exposure direct \
+  --description "Search, fetch, and save user-approved durable knowledge." \
+  -- /absolute/path/to/.venv/bin/pocket-recall-mcp
+pi mcp list
+```
+
+This creates the user-level `~/.pi/agent/mcp.json` configuration. The server is
+available in every workspace, but stored content enters context only when Pi
+calls `search` or `fetch`.
 
 ## Local data
 
@@ -119,8 +127,6 @@ src/pocket_recall/
 ├── transport/    shared service, client, and protocol
 ├── mcp/          harness-neutral MCP adapter
 └── cli.py        human-facing command line
-
-pi-extension/     optional Pi adapter
 ```
 
 Development rules and architectural gotchas are in [`AGENTS.md`](AGENTS.md).

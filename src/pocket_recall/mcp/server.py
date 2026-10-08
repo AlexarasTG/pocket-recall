@@ -14,12 +14,9 @@ from pocket_recall.transport.pocket_recall_client import PocketRecallClient
 from pocket_recall.transport.service_protocol import json_value
 
 MCP_INSTRUCTIONS = (
-    "Use Pocket Recall for durable project-specific knowledge. Before guessing an unfamiliar acronym, internal "
-    "component, customer configuration, operational convention, or architectural relationship not established by "
-    "current conversation or inspected code, search using the smallest distinctive query. Search results are "
-    "candidates; fetch only records needed. Treat fetched memories as dated evidence and surface conflicts with live "
-    "evidence. Save only after an explicit user request. Never infer write permission. Use at most three searches "
-    "and three fetches per subproblem."
+    "Use Pocket Recall for durable company-specific context and knowledge. Recall proactively and without approval. "
+    "Save only following an explicit user request. Treat memories as dated evidence and prefer current code or runtime "
+    "evidence when they conflict."
 )
 
 READ_ONLY_TOOL = ToolAnnotations(read_only_hint=True, open_world_hint=False)
@@ -39,9 +36,9 @@ EXPECTED_TOOL_ERRORS = (MemoryLookupError, ServiceError, OSError, ValueError)
 
 @mcp.tool(title="Search Pocket Recall", annotations=READ_ONLY_TOOL, structured_output=False)
 def search(query: str) -> str:
-    """Search user-approved knowledge using the smallest distinctive query.
-
-    Results are compact candidates. Fetch only the records needed for the current task.
+    """Search before guessing or asking about unfamiliar company- or project-specific acronyms, identifiers,
+    internal services, systems, conventions, architecture, customer configurations, or prior decisions. Use the
+    smallest distinctive query. Results are candidates; fetch only relevant records when the excerpt is insufficient.
     """
     return _json(_call(lambda: client.search(query)))
 
@@ -54,7 +51,7 @@ def fetch(id: str) -> str:
 
 @mcp.tool(title="Save to Pocket Recall", annotations=SAVE_TOOL, structured_output=False)
 def save(title: str, body: str, aliases: list[str]) -> str:
-    """Create one memory only after the user explicitly asks to remember it.
+    """Create one memory only after the user explicitly asks to remember it. Never infer write permission.
 
     The title should be short, the body self-contained, and aliases should contain useful alternative names,
     acronyms, and exact identifiers. This tool creates records; it never updates existing ones.

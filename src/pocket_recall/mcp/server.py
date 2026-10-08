@@ -14,7 +14,7 @@ from pocket_recall.transport.pocket_recall_client import PocketRecallClient
 from pocket_recall.transport.service_protocol import json_value
 
 MCP_INSTRUCTIONS = (
-    "Use Pocket Recall for durable company-specific context and knowledge. Recall proactively and without approval. "
+    "Use Pocket Recall for durable company- and project-specific knowledge. Recall proactively and without approval. "
     "Save only following an explicit user request. Treat memories as dated evidence and prefer current code or runtime "
     "evidence when they conflict."
 )

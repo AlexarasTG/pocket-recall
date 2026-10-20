@@ -3,7 +3,7 @@
 import json
 import sqlite3
 from collections import Counter
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from pocket_recall.config import MemoryConfig
 from pocket_recall.models import SearchCandidate
@@ -90,7 +90,7 @@ class RetrievalAuditStore(SQLiteDatabase):
             keyword = keyword.casefold().strip()
             if len(keyword.split()) != 1:
                 raise ValueError("keyword must be one non-empty whitespace-separated term")
-        cutoff = datetime.now(timezone.utc) - timedelta(days=self.config.audit_retention_days)
+        cutoff = datetime.now(UTC) - timedelta(days=self.config.audit_retention_days)
         with self.read() as connection:
             rows = connection.execute(
                 """SELECT occurred_at, query, result_details FROM retrieval_events
@@ -136,7 +136,7 @@ class RetrievalAuditStore(SQLiteDatabase):
         returned_characters: int,
         duration_milliseconds: float,
     ) -> None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         with self.write() as connection:
             last_cleanup = connection.execute("SELECT last_age_cleanup_date FROM audit_state WHERE id = 1").fetchone()[
                 0

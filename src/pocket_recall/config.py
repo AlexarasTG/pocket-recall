@@ -33,6 +33,7 @@ class MemoryConfig:
     embedding_threads: int = 2
     recovery_retention_days: int = 60
     audit_retention_days: int = 30
+    audit_report_keyword_limit: int = 10
     audit_max_bytes: int = 10_000_000
     audit_trim_target_bytes: int = 8_000_000
     daily_snapshots_to_keep: int = 7
@@ -55,6 +56,7 @@ class MemoryConfig:
             "max_searches_per_subproblem",
             "recovery_retention_days",
             "audit_retention_days",
+            "audit_report_keyword_limit",
             "audit_max_bytes",
             "audit_trim_target_bytes",
             "daily_snapshots_to_keep",

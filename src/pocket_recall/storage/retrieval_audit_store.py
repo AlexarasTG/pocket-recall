@@ -2,6 +2,7 @@
 
 import json
 import sqlite3
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 
 from pocket_recall.config import MemoryConfig
@@ -81,6 +82,49 @@ class RetrievalAuditStore(SQLiteDatabase):
             "event_count": row["event_count"],
             "oldest_event_at": row["oldest_event_at"],
             "newest_event_at": row["newest_event_at"],
+        }
+
+    def empty_results_report(self, keyword: str | None = None) -> dict[str, object]:
+        """Summarize retained search terms or the original queries containing one term."""
+        if keyword is not None:
+            keyword = keyword.casefold().strip()
+            if len(keyword.split()) != 1:
+                raise ValueError("keyword must be one non-empty whitespace-separated term")
+        cutoff = datetime.now(timezone.utc) - timedelta(days=self.config.audit_retention_days)
+        with self.read() as connection:
+            rows = connection.execute(
+                """SELECT occurred_at, query, result_details FROM retrieval_events
+                   WHERE operation = 'search' AND occurred_at > ? ORDER BY occurred_at, id""",
+                (cutoff.isoformat(),),
+            ).fetchall()
+
+        totals: Counter[str] = Counter()
+        empty: Counter[str] = Counter()
+        for row in rows:
+            terms = set(row["query"].casefold().split())
+            if keyword is not None:
+                if keyword not in terms:
+                    continue
+                terms = {row["query"]}
+            no_results = not json.loads(row["result_details"])
+            for term in terms:
+                totals[term] += 1
+                if no_results:
+                    empty[term] += 1
+
+        if keyword is None:
+            ranked = sorted(totals, key=lambda term: (-empty[term], -totals[term], term))
+            ranked = ranked[: self.config.audit_report_keyword_limit]
+        else:
+            ranked = sorted(totals, key=lambda term: (-totals[term], term))
+        label = "keyword" if keyword is None else "query"
+        return {
+            "oldest_search_at": rows[0]["occurred_at"] if rows else None,
+            "newest_search_at": rows[-1]["occurred_at"] if rows else None,
+            "keyword": keyword,
+            "results": [
+                {label: term, "total_searches": totals[term], "empty_searches": empty[term]} for term in ranked
+            ],
         }
 
     def _record(

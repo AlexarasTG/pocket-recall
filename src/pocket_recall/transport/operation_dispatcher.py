@@ -46,6 +46,7 @@ class OperationDispatcher:
             "search": self._search,
             "maintenance.init": self._initialize,
             "maintenance.status": self._status,
+            "maintenance.report": self._empty_results_report,
             "maintenance.reindex": self._reindex,
             "service.health": self._health,
             "service.stop": self._stop,
@@ -150,6 +151,9 @@ class OperationDispatcher:
             "index_update_pending": self.store.index_update_pending(),
             "retrieval_audit": self.audit_store.status(),
         }
+
+    def _empty_results_report(self, arguments: dict[str, Any]) -> object:
+        return self.audit_store.empty_results_report(self._optional_text(arguments, "keyword"))
 
     def _reindex(self, arguments: dict[str, Any]) -> object:
         self._empty(arguments)

@@ -52,6 +52,8 @@ def build_parser() -> argparse.ArgumentParser:
     actions = maintenance.add_subparsers(dest="maintenance_command", required=True)
     actions.add_parser("init", help="Initialize local storage and its search index")
     actions.add_parser("status", help="Check whether the search index is up to date")
+    report = actions.add_parser("report", help="Review recurring search terms and empty results")
+    report.add_argument("--keyword", help="Show original queries containing this whole keyword")
     actions.add_parser("reindex", help="Rebuild search data from saved memories without changing them")
     restore_snapshot = actions.add_parser("restore", help="Restore the canonical database from a daily snapshot")
     restore_snapshot.add_argument("date", help="Snapshot date in YYYY-MM-DD format")
@@ -164,6 +166,9 @@ class MemoryCLI:
             print(f"Memory database ready: {self.store.initialize()}")
         elif args.maintenance_command == "status":
             print_json(self.store.maintenance_status())
+            return
+        elif args.maintenance_command == "report":
+            print_json(self.store.empty_results_report(args.keyword))
             return
         elif args.maintenance_command == "reindex":
             self.store.reindex()

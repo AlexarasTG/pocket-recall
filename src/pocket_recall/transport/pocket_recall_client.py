@@ -147,6 +147,9 @@ class PocketRecallClient:
     def maintenance_status(self) -> dict[str, Any]:
         return self._object_result(self._request("maintenance.status", {}))
 
+    def empty_results_report(self, keyword: str | None = None) -> dict[str, Any]:
+        return self._object_result(self._request("maintenance.report", {"keyword": keyword}))
+
     def restore_database_snapshot(self, snapshot_date: str) -> None:
         self.stop()
         with self._exclusive_service_lock():

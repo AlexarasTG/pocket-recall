@@ -49,6 +49,7 @@ memory read MEMORY_ID
 memory delete MEMORY_ID
 memory restore MEMORY_ID
 memory maintenance status
+memory maintenance review
 ```
 
 Run `memory COMMAND --help` for all options. Mutating commands show a preview
@@ -63,13 +64,24 @@ The `pocket-recall-mcp` executable exposes three tools:
 
 - `search(query)`: compact candidates;
 - `fetch(id)`: one complete active record;
-- `save(title, body, aliases)`: create one record.
+- `save(title, body, aliases, id?)`: create one record, or fully replace the
+  record with `id`.
 
 Any MCP-compatible harness that supports local STDIO servers can launch this
 executable. Configure read tools to run automatically and `save` to require
 approval.
 
-For Codex development setup:
+Claude Code:
+
+```sh
+claude mcp add --scope user pocket-recall -- /absolute/path/to/.venv/bin/pocket-recall-mcp
+```
+
+Claude Code asks before every MCP call by default. To run reads automatically, allow
+`mcp__pocket-recall__search` and `mcp__pocket-recall__fetch` under `permissions.allow`
+in `~/.claude/settings.json`.
+
+Codex:
 
 ```sh
 codex mcp add pocket-recall -- /absolute/path/to/.venv/bin/pocket-recall-mcp
@@ -85,21 +97,20 @@ default_tools_approval_mode = "writes"
 approval_mode = "prompt"
 ```
 
-## Pi integration
-
-Pi supports Pocket Recall through its built-in MCP client. Register the local
-server once, then restart Pi or run `/reload`:
+Pi:
 
 ```sh
 pi mcp add pocket-recall --exposure direct \
   --description "Search, fetch, and save user-approved durable knowledge." \
   -- /absolute/path/to/.venv/bin/pocket-recall-mcp
-pi mcp list
 ```
 
-This creates the user-level `~/.pi/agent/mcp.json` configuration. The server is
-available in every workspace, but stored content enters context only when Pi
-calls `search` or `fetch`.
+## Worth-remembering skill
+
+[`skills/worth-remembering`](skills/worth-remembering) helps you decide what deserves a memory. Run it at the
+end of a work session to get proposals for small, durable records. Run it with `review` about once a week to
+"dream": it reads `memory maintenance review`, asks about frequent searches with no results, and proposes merges,
+splits, or cleanups. It only proposes; nothing is saved without your approval.
 
 ## Local data
 
@@ -115,7 +126,7 @@ Pocket Recall stores private application data under:
 ```
 
 Deleted and replaced versions remain recoverable for 60 days. Retrieval audit
-events contain no memory bodies and expire after 30 days.
+events contain no memory bodies and expire after 90 days.
 
 ## Project structure
 

@@ -24,10 +24,15 @@ pocket-recall-mcp = "pocket_recall.mcp.server:main"
 dev = [
     "black>=26",
     "isort>=8",
+    "pytest>=8",
 ]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-p no:anyio"
 
 [tool.isort]
 profile = "black"

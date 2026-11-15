@@ -145,8 +145,9 @@ Development rules and architectural gotchas are in [`AGENTS.md`](AGENTS.md).
 ## Development checks
 
 ```sh
-.venv/bin/python -m compileall -q src
-.venv/bin/python -m isort --check-only src
-.venv/bin/python -m black --check src
-.venv/bin/python -m pip check
+scripts/build.sh
 ```
+
+It refreshes the editable install, compiles, formats with isort and black, runs the
+tests and `pip check`, then stops the shared service so the next command starts
+it with the current code.

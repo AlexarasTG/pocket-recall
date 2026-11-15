@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pocket Recall: memory for coding agents</title>
+<meta name="description" content="Local-first memory for coding agents. Remembers less. Recalls better.">
+<style>
+  :root {
+    --bg: #fbfaf7; --fg: #1d1c1a; --muted: #6b6760; --line: #e6e2da;
+    --card: #ffffff; --accent: #c2410c; --accent-soft: #fdf0e8; --code: #f3f0ea;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141312; --fg: #ece9e3; --muted: #9a958c; --line: #2c2a27;
+      --card: #1c1b19; --accent: #fb923c; --accent-soft: #2a1c12; --code: #22201d;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 17px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+  }
+  main { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+  section { padding: 72px 0; border-top: 1px solid var(--line); }
+  h1, h2, h3 { line-height: 1.2; margin: 0 0 12px; letter-spacing: -0.02em; }
+  h1 { font-size: clamp(40px, 7vw, 64px); }
+  h2 { font-size: 32px; }
+  h3 { font-size: 19px; }
+  p { margin: 0 0 12px; }
+  .muted { color: var(--muted); }
+  .eyebrow { color: var(--accent); font-weight: 600; font-size: 14px; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 8px; }
+  .lead { font-size: 21px; color: var(--muted); max-width: 640px; }
+  code, pre { font: 14px/1.6 ui-monospace, "SF Mono", Menlo, monospace; }
+  pre { background: var(--code); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; overflow-x: auto; margin: 0; }
+  .grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-top: 32px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 24px; }
+  .card p:last-child { margin-bottom: 0; }
+
+  header { padding: 96px 0 72px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; margin-bottom: 48px; }
+  .brand svg { width: 28px; height: 28px; }
+  .actions { display: flex; gap: 12px; flex-wrap: wrap; margin: 32px 0; }
+  .button { display: inline-block; padding: 12px 20px; border-radius: 10px; font-weight: 600; text-decoration: none; border: 1px solid var(--line); color: var(--fg); }
+  .button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  .principles { list-style: none; padding: 0; margin: 32px 0 0; display: grid; gap: 16px; }
+  .principles li { padding-left: 20px; border-left: 3px solid var(--accent); }
+  .principles strong { display: block; }
+
+  .step { font-size: 13px; font-weight: 700; color: var(--accent); letter-spacing: 0.06em; text-transform: uppercase; }
+  .chat { margin-top: 16px; font: 13.5px/1.55 ui-monospace, "SF Mono", Menlo, monospace; background: var(--code); border-radius: 10px; padding: 14px; }
+  .chat div { margin-bottom: 8px; }
+  .chat div:last-child { margin-bottom: 0; }
+  .who { color: var(--accent); font-weight: 700; }
+
+  .numbers { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 20px; margin-top: 40px; }
+  .numbers div { text-align: center; }
+  .numbers strong { display: block; font-size: 44px; letter-spacing: -0.03em; color: var(--accent); }
+  .numbers span { color: var(--muted); font-size: 15px; }
+
+  .wont { list-style: none; padding: 0; margin: 24px 0 0; columns: 2 280px; }
+  .wont li { margin-bottom: 10px; break-inside: avoid; }
+  .wont li::before { content: "✕"; color: var(--accent); font-weight: 700; margin-right: 10px; }
+
+  .harnesses { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 20px; }
+  .harnesses span { padding: 8px 16px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); }
+
+  footer { border-top: 1px solid var(--line); padding: 32px 0 48px; color: var(--muted); font-size: 15px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <div class="brand">
+    <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+      <path d="M5 8h22v9a11 11 0 0 1-22 0V8Z" stroke="currentColor" stroke-width="2.5"/>
+      <path d="M11 15l5 5 5-5" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    Pocket Recall
+  </div>
+  <h1>Remembers less.<br>Recalls better.</h1>
+  <p class="lead">Local-first memory for coding agents. Your agent proposes what to keep, you decide, and later it finds exactly the piece it needs without dragging everything else into context.</p>
+  <div class="actions">
+    <a class="button primary" href="https://github.com/AlexarasTG/pocket-recall">View on GitHub</a>
+    <a class="button" href="https://github.com/AlexarasTG/pocket-recall#mcp-integration">Set it up</a>
+  </div>
+  <pre>git clone https://github.com/AlexarasTG/pocket-recall && cd pocket-recall
+python3 -m venv .venv && .venv/bin/pip install -e .
+.venv/bin/memory maintenance init</pre>
+</header>
+
+<section>
+  <div class="eyebrow">The problem</div>
+  <h2>Garbage in, garbage recalled.</h2>
+  <p class="lead">Most agent memory saves everything it sees. A month later, recall serves back stale guesses, half-finished thoughts and duplicates, all with the same confidence as the facts.</p>
+  <p class="lead">The usual alternative is one huge notes file that loads into every session in full, whether today's task needs it or not.</p>
+</section>
+
+<section>
+  <div class="eyebrow">Philosophy</div>
+  <h2>A small library you actually trust.</h2>
+  <ul class="principles">
+    <li><strong>You approve every memory.</strong><span class="muted">Agents suggest. Nothing is written, edited or deleted without you.</span></li>
+    <li><strong>Nothing beats something wrong.</strong><span class="muted">If no memory is a good match, the agent gets no results instead of loosely related noise.</span></li>
+    <li><strong>A memory is evidence, not truth.</strong><span class="muted">Records are dated. When they disagree with the current code, the code wins and the conflict is shown to you.</span></li>
+    <li><strong>Your machine, your data.</strong><span class="muted">Records, search index and embedding model all live locally. No account, no cloud, no network calls after setup.</span></li>
+  </ul>
+</section>
+
+<section>
+  <div class="eyebrow">How it works</div>
+  <h2>Capture, recall, dream.</h2>
+  <div class="grid">
+    <div class="card">
+      <div class="step">1 · Capture</div>
+      <h3>At the end of a session</h3>
+      <p class="muted">The agent looks back and proposes a few small, durable facts. You keep, edit or drop each one.</p>
+      <div class="chat">
+        <div><span class="who">agent</span> Worth remembering: "Staging deploys need the VPN". Save?</div>
+        <div><span class="who">you</span> Yes.</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="step">2 · Recall</div>
+      <h3>While the agent works</h3>
+      <p class="muted">The agent searches on its own and opens only the memory it picks.</p>
+      <div class="chat">
+        <div><span class="who">search</span> "staging deploy hangs"</div>
+        <div>→ Staging deploys need the VPN</div>
+        <div><span class="who">search</span> "banana smoothie"</div>
+        <div>→ nothing, as it should be</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="step">3 · Dream</div>
+      <h3>Once a week</h3>
+      <p class="muted">The library looks back at itself and suggests what to fill in, merge or retire.</p>
+      <div class="chat">
+        <div><span class="who">dream</span> "billing webhook" was searched 9 times and never found. Write it down?</div>
+        <div><span class="who">dream</span> "Release steps" and "Release checklist" say the same thing. Merge?</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow">Under the hood</div>
+  <h2>Every choice is about context.</h2>
+  <p class="lead">An agent's context window is its working memory. Each design decision is there to fill it with the right thing, not more things.</p>
+  <div class="grid">
+    <div class="card">
+      <h3>Memories that stand alone</h3>
+      <p class="muted">No blind chunking of documents. Each memory is one idea, written to make sense on its own, with a title and the aliases people actually use.</p>
+    </div>
+    <div class="card">
+      <h3>Search, then fetch</h3>
+      <p class="muted">Search returns a short shortlist with one-line previews. The full text enters context only when the agent picks a record.</p>
+    </div>
+    <div class="card">
+      <h3>Precise before fuzzy</h3>
+      <p class="muted">Exact names first, then keywords, then typos, and meaning only as a last resort. Acronyms and internal jargon match exactly instead of drifting.</p>
+    </div>
+    <div class="card">
+      <h3>Lazy by default</h3>
+      <p class="muted">The embedding model loads only when a search really needs meaning. Most lookups never touch it.</p>
+    </div>
+  </div>
+  <div class="numbers">
+    <div><strong>3</strong><span>agent tools</span></div>
+    <div><strong>1,000</strong><span>characters max per memory</span></div>
+    <div><strong>5</strong><span>results max per search</span></div>
+    <div><strong>0</strong><span>network calls after setup</span></div>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow">It measures itself</div>
+  <h2>You can see what recall is doing.</h2>
+  <p class="lead">Every search leaves a small trace: the search terms, what matched, and how well. No memory content is ever copied into it, and it expires after 90 days. From that you can see which searches find something, which keep coming back empty, and which memories never come up at all.</p>
+  <p class="lead">That is what dreaming runs on. Gaps become new memories and dead weight gets retired, based on how your agents actually search rather than on guesswork.</p>
+</section>
+
+<section>
+  <div class="eyebrow">What it won't do</div>
+  <h2>Deliberately boring.</h2>
+  <ul class="wont">
+    <li>Write memories on its own</li>
+    <li>Quietly correct a record that looks out of date</li>
+    <li>Send anything to the cloud</li>
+    <li>Copy your memories into its usage log</li>
+    <li>Pad results to look helpful</li>
+    <li>Grow a taxonomy nobody asked for</li>
+  </ul>
+</section>
+
+<section>
+  <div class="eyebrow">Works with</div>
+  <h2>Any agent that speaks MCP.</h2>
+  <p class="lead">Three tools: <code>search</code>, <code>fetch</code> and <code>save</code>. Reads run automatically and saves ask first. It comes with a skill for end-of-session capture and weekly dreaming.</p>
+  <div class="harnesses"><span>Claude Code</span><span>Codex</span><span>Pi</span><span>any MCP client</span></div>
+</section>
+
+<footer>
+  <span>Pocket Recall · MIT License</span>
+  <a href="https://github.com/AlexarasTG/pocket-recall">github.com/AlexarasTG/pocket-recall</a>
+</footer>
+
+</main>
+</body>
+</html>

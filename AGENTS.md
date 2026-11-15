@@ -80,6 +80,3 @@ scripts/build.sh
 It refreshes the editable install, compiles, formats with isort and black, runs the
 tests and `pip check`, then stops the shared service so the next command starts
 it with the current code.
-
-Changing `pyproject.toml` console entry points requires refreshing the editable
-install. Ordinary changes under `src/` do not.

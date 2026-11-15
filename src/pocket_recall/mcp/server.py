@@ -22,7 +22,7 @@ MCP_INSTRUCTIONS = (
 READ_ONLY_TOOL = ToolAnnotations(read_only_hint=True, open_world_hint=False)
 SAVE_TOOL = ToolAnnotations(
     read_only_hint=False,
-    destructive_hint=False,
+    destructive_hint=True,
     idempotent_hint=False,
     open_world_hint=False,
 )
@@ -50,13 +50,16 @@ def fetch(id: str) -> str:
 
 
 @mcp.tool(title="Save to Pocket Recall", annotations=SAVE_TOOL, structured_output=False)
-def save(title: str, body: str, aliases: list[str]) -> str:
-    """Create one memory only after the user explicitly asks to remember it. Never infer write permission.
+def save(title: str, body: str, aliases: list[str], id: str | None = None) -> str:
+    """Create or replace one memory only after the user explicitly asks to remember or change it. Never infer write
+    permission.
 
     The title should be short, the body self-contained, and aliases should contain useful alternative names,
-    acronyms, and exact identifiers. This tool creates records; it never updates existing ones.
+    acronyms, and exact identifiers. Omit id to create a record. Pass id to replace an existing record: fetch it
+    first and send the complete revised title, body, and aliases.
     """
-    record = _call(lambda: client.create(MemoryPreSaveDraft(title=title, body=body, aliases=tuple(aliases))))
+    draft = MemoryPreSaveDraft(title=title, body=body, aliases=tuple(aliases))
+    record = _call(lambda: client.create(draft) if id is None else client.update(id, draft))
     try:
         index_status = "update_pending" if client.index_update_pending() else "up_to_date"
     except EXPECTED_TOOL_ERRORS:

@@ -47,6 +47,7 @@ class OperationDispatcher:
             "maintenance.init": self._initialize,
             "maintenance.status": self._status,
             "maintenance.report": self._empty_results_report,
+            "maintenance.review": self._review,
             "maintenance.reindex": self._reindex,
             "service.health": self._health,
             "service.stop": self._stop,
@@ -154,6 +155,18 @@ class OperationDispatcher:
 
     def _empty_results_report(self, arguments: dict[str, Any]) -> object:
         return self.audit_store.empty_results_report(self._optional_text(arguments, "keyword"))
+
+    def _review(self, arguments: dict[str, Any]) -> object:
+        self._empty(arguments)
+        gaps = self.audit_store.empty_results_report()["results"]
+        unused_since, searched_ids = self.audit_store.searched_memory_ids()
+        return {
+            "gaps": [gap for gap in gaps if gap["empty_searches"]],
+            "similar_pairs": self.store.similar_record_pairs(),
+            "oversized": self.store.oversized_records(),
+            "unused_since": unused_since,
+            "unused": self.store.unused_records(searched_ids, created_before=unused_since) if unused_since else [],
+        }
 
     def _reindex(self, arguments: dict[str, Any]) -> object:
         self._empty(arguments)

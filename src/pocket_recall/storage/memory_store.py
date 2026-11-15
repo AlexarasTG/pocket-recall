@@ -239,6 +239,45 @@ class MemoryStore:
             self._get_record(connection, memory_id)
             return self.archive_store.fetch(connection, memory_id, revision_id, datetime.now(timezone.utc))
 
+    def similar_record_pairs(self) -> list[dict[str, object]]:
+        with self.search_store.snapshot(self.database) as connection:
+            pairs = self.search_store.similar_pairs(
+                connection, threshold=self.config.review_similarity_threshold, limit=self.config.review_item_limit
+            )
+            titles = {
+                row["id"]: row["title"]
+                for row in connection.execute(
+                    "SELECT id, title FROM memories WHERE id IN (SELECT value FROM json_each(?))",
+                    (json.dumps([memory_id for pair in pairs for memory_id in pair[:2]]),),
+                )
+            }
+        return [
+            {
+                "similarity": round(score, 3),
+                "memories": [{"id": left, "title": titles[left]}, {"id": right, "title": titles[right]}],
+            }
+            for left, right, score in pairs
+        ]
+
+    def oversized_records(self) -> list[dict[str, object]]:
+        with self.database.read() as connection:
+            rows = connection.execute(
+                """SELECT id, title, length(body) AS body_characters FROM memories
+                   WHERE deleted_at IS NULL AND length(body) >= ? ORDER BY body_characters DESC, id LIMIT ?""",
+                (self.config.review_oversized_body_characters, self.config.review_item_limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def unused_records(self, used_ids: frozenset[str], *, created_before: str) -> list[dict[str, object]]:
+        with self.database.read() as connection:
+            rows = connection.execute(
+                """SELECT id, title, created_at, updated_at FROM memories
+                   WHERE deleted_at IS NULL AND created_at < ? AND id NOT IN (SELECT value FROM json_each(?))
+                   ORDER BY updated_at, id LIMIT ?""",
+                (created_before, json.dumps(sorted(used_ids)), self.config.review_item_limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def _get_record(self, connection: sqlite3.Connection, memory_id: str) -> MemoryRecord:
         row = connection.execute("SELECT * FROM memories WHERE id = ?", (memory_id,)).fetchone()
         if row is None:

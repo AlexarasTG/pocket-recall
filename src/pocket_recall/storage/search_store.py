@@ -228,6 +228,28 @@ class SearchStore(SQLiteDatabase):
             for memory_id, score in best
         )
 
+    def similar_pairs(
+        self, connection: sqlite3.Connection, *, threshold: float, limit: int
+    ) -> tuple[tuple[str, str, float], ...]:
+        """Return the most similar pairs of current memories, compared in small batches."""
+        rows = connection.execute("""SELECT v.memory_id, v.embedding FROM search.memory_vectors AS v
+               JOIN search.indexed_memories AS i ON i.memory_id = v.memory_id
+               JOIN memories AS m ON m.id = i.memory_id AND m.updated_at = i.updated_at
+               WHERE m.deleted_at IS NULL ORDER BY v.memory_id""").fetchall()
+        if len(rows) < 2:
+            return ()
+        vectors = np.frombuffer(b"".join(row["embedding"] for row in rows), dtype="<f4").reshape(-1, self.dimensions)
+        best: list[tuple[str, str, float]] = []
+        for start in range(0, len(rows), 256):
+            scores = np.clip(vectors[start : start + 256] @ vectors.T, -1, 1)
+            for offset, row_scores in enumerate(scores):
+                left = start + offset
+                for right in np.flatnonzero(row_scores[left + 1 :] >= threshold) + left + 1:
+                    best.append((rows[left]["memory_id"], rows[right]["memory_id"], float(row_scores[right])))
+            best.sort(key=lambda pair: (-pair[2], pair[0], pair[1]))
+            del best[limit:]
+        return tuple(best)
+
     def has_current_vectors(self, connection: sqlite3.Connection) -> bool:
         return bool(connection.execute("""SELECT EXISTS(SELECT 1 FROM search.memory_vectors AS v
                JOIN search.indexed_memories AS i ON i.memory_id = v.memory_id

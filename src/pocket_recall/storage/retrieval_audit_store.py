@@ -127,6 +127,21 @@ class RetrievalAuditStore(SQLiteDatabase):
             ],
         }
 
+    def searched_memory_ids(self) -> tuple[str | None, frozenset[str]]:
+        """Return the oldest retained search date and the IDs that appeared in search results since then."""
+        cutoff = datetime.now(UTC) - timedelta(days=self.config.audit_retention_days)
+        with self.read() as connection:
+            oldest = connection.execute(
+                "SELECT min(occurred_at) FROM retrieval_events WHERE operation = 'search' AND occurred_at > ?",
+                (cutoff.isoformat(),),
+            ).fetchone()[0]
+            rows = connection.execute(
+                """SELECT DISTINCT json_extract(r.value, '$.id') FROM retrieval_events AS e, json_each(e.result_details) AS r
+                   WHERE e.operation = 'search' AND e.occurred_at > ?""",
+                (cutoff.isoformat(),),
+            ).fetchall()
+        return oldest, frozenset(row[0] for row in rows)
+
     def _record(
         self,
         *,

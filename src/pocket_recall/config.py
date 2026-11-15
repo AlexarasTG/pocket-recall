@@ -32,9 +32,12 @@ class MemoryConfig:
     semantic_similarity_threshold: float = 0.65
     embedding_threads: int = 2
     recovery_retention_days: int = 60
-    audit_retention_days: int = 30
+    audit_retention_days: int = 90
     audit_report_keyword_limit: int = 10
     audit_max_bytes: int = 10_000_000
+    review_item_limit: int = 10
+    review_similarity_threshold: float = 0.75
+    review_oversized_body_characters: int = 800
     audit_trim_target_bytes: int = 8_000_000
     daily_snapshots_to_keep: int = 7
     model_idle_timeout_minutes: int = 60
@@ -58,6 +61,8 @@ class MemoryConfig:
             "audit_retention_days",
             "audit_report_keyword_limit",
             "audit_max_bytes",
+            "review_item_limit",
+            "review_oversized_body_characters",
             "audit_trim_target_bytes",
             "daily_snapshots_to_keep",
             "model_idle_timeout_minutes",
@@ -79,6 +84,8 @@ class MemoryConfig:
             raise ValueError("Semantic fallback policy must be on_zero_results or fill_remaining_slots")
         if not isfinite(self.semantic_similarity_threshold) or not -1 <= self.semantic_similarity_threshold <= 1:
             raise ValueError("Semantic similarity threshold must be between -1 and 1")
+        if not isfinite(self.review_similarity_threshold) or not -1 <= self.review_similarity_threshold <= 1:
+            raise ValueError("Review similarity threshold must be between -1 and 1")
         if len(self.index_retry_delays_seconds) != 4 or any(delay <= 0 for delay in self.index_retry_delays_seconds):
             raise ValueError("Index retry delays must contain four positive values")
         if self.audit_trim_target_bytes >= self.audit_max_bytes:
